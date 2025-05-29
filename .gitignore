@@ -131,3 +131,5 @@ __pypackages__/
 evaluation_jsonl
 *.pth
 *.sh
+*.png
+*.pkl
