@@ -3,6 +3,10 @@ from utils import to_request
 import argparse
 import json
 from openai import OpenAI
+import os
+from dotenv import load_dotenv
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Inference script with arguments')
@@ -10,8 +14,6 @@ if __name__ == "__main__":
     parser.add_argument('--activation_type', type=str, default=',mha', help='Activation type (residual, mlp, mha)')
     parser.add_argument('--chosen_layer', type=int, default=4, help='Which layer to intervene (int)')
     parser.add_argument('--scale', type=float, default=-10, help='Scale factor for probe vectors')
-    parser.add_argument('--api_key', type=str, default="", 
-                        help='API key for LLM-as-a-Judge')
     parser.add_argument('--run_num', type=int, default=0, help='Trial number for the experiment')
     
     args = parser.parse_args()
@@ -19,8 +21,9 @@ if __name__ == "__main__":
     activation_type = args.activation_type
     chosen_layer = args.chosen_layer
     scale = args.scale
-    api_key = args.api_key
-    client = OpenAI(api_key=args.api_key)
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    client = OpenAI(api_key=api_key)
 
     if activation_type == 'mha':
         prediction_path = f'predictions/{model_id}_answers_{chosen_layer}_{scale}_mha.csv'
