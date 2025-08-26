@@ -43,16 +43,19 @@ def get_probe_vectors(top_k_heads, model_id, scale=5, num_layers=None, head_dim=
             target_heads[layer] = [head]
 
     probes = {key: torch.zeros(head_dim*num_heads) for key in range(num_layers)}
+    model_folder_path = 'gemma-3-4b-it' if model_id == 'gemma-3' else 'Qwen3-4B-Instruct-2507'
     for layer in target_heads:
         for head in target_heads[layer]:
             if direction_type == 'probe_weight':
-                current_probe = torch.load(f'linear_probe/trained_probe/{model_id}/linear_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
+                current_probe = torch.load(f'linear_probe/trained_probe/{model_folder_path}/linear_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
             elif direction_type == 'mean_mass':
-                current_probe = torch.load(f'linear_probe/mean_direction/{model_id}/linear_probe_{layer}_{head}.pth').squeeze()
+                current_probe = torch.load(f'linear_probe/mean_direction/{model_folder_path}/linear_probe_{layer}_{head}.pth').squeeze()
             if use_random_direction:
                 current_probe = torch.normal(mean=current_probe.mean(), std=current_probe.std(), size=current_probe.shape)
             current_std = torch.std(current_probe)
+            current_probe = current_probe / torch.norm(current_probe, p=2)
             current_probe = scale * current_std * current_probe
+            # current_probe = scale * current_probe
             probes[layer][head*head_dim:head_dim*(head+1)] = current_probe
     return probes
 
@@ -61,24 +64,28 @@ def main():
     parser.add_argument('--model_id', type=str, default='gemma-3', help='Model ID to use')
     parser.add_argument('--k_heads', type=int, default=16, help='Number of top heads to use')
     parser.add_argument('--scale', type=float, default=-20, help='Scale factor for probe vectors')
-    parser.add_argument('--direction_type', type=str, default='mean_mass', help='Direction type for probe vectors')
-
-    parser.add_argument('--api_key', type=str, default="", 
-                        help='API key for Anthropic')
+    parser.add_argument('--direction_type', type=str, default='probe_weight', help='Direction type for probe vectors')
     
     args = parser.parse_args()
     
     model_id = args.model_id
     k_heads = args.k_heads
     scale = args.scale
-    api_key = args.api_key
     
     print(f"Loading model: {model_id}")
     model, processor = load_model(model_id)
     model.eval()
     
     print(f"Loading accuracies for model: {model_id}")
-    accuracies = pickle.load(open(f'linear_probe/trained_probe/{model_id}/accuracies_dict.pkl', 'rb'))
+    if model_id == 'gemma-3':
+        model_folder_path = 'gemma-3-4b-it' 
+    elif model_id == 'qwen-3':
+        model_folder_path = 'Qwen3-4B-Instruct-2507'
+    elif model_id == 'llama-3.2':
+        model_folder_path = 'Llama-3.2-3B-Instruct'
+    else:
+        raise('model_id not supported')
+    accuracies = pickle.load(open(f'linear_probe/trained_probe/{model_folder_path}/accuracies_dict_mha.pkl', 'rb'))
     config = model.config
     
     # Set model parameters based on model type
@@ -138,57 +145,9 @@ def main():
         initial_answer.append(res_1)
         final_answer.append(res_2)
     
-    print("Creating batch job for initial answers")
-    requests = [to_request(f'truthfulqa_{model_id}_initial_iti-{i}', q, a, p) 
-                   for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, initial_answer))]
-    
-    # create_anthropic_batch_job(requests, api_key=api_key)
-    import json
-    with open(f"truthfulqa-{model_id}_initial_iti_{k_heads}_{scale}.jsonl", 'w') as f:
-        for item in requests:
-            json_line = json.dumps(item)
-            f.write(json_line + '\n')
-    from openai import OpenAI
-    client = OpenAI(api_key="")
-    batch_input_file = client.files.create(
-        file=open(f"truthfulqa-{model_id}_initial_iti_{k_heads}_{scale}.jsonl", "rb"),
-        purpose="batch"
-    )
-    batch_input_file_id = batch_input_file.id
-    client.batches.create(
-        input_file_id=batch_input_file_id,
-        endpoint="/v1/chat/completions",
-        completion_window="24h",
-        metadata={
-            "description": f"truthfulqa-{model_id}_initial_iti_{k_heads}_{scale}"
-        }
-    )
-
-    print("Creating batch job for final answers")
-    if 'gemma' in str(type(model)).lower():
-        requests = [to_request(f'truthfulqa_{model_id}_final_iti-{i}', q, a, p) 
-                   for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, final_answer))]
-    else:
-        requests = [to_request(f'truthfulqa_{model_id}_final_iti-{i}', q, a, p) 
-                   for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, final_answer))]
-    with open(f"truthfulqa-{model_id}_final_iti_{k_heads}_{scale}.jsonl", 'w') as f:
-        for item in requests:
-            json_line = json.dumps(item)
-            f.write(json_line + '\n')
-    # create_anthropic_batch_job(requests, api_key=api_key)
-    batch_input_file = client.files.create(
-        file=open(f"truthfulqa-{model_id}_final_iti_{k_heads}_{scale}.jsonl", "rb"),
-        purpose="batch"
-    )
-    batch_input_file_id = batch_input_file.id
-    client.batches.create(
-        input_file_id=batch_input_file_id,
-        endpoint="/v1/chat/completions",
-        completion_window="24h",
-        metadata={
-            "description": f"truthfulqa-{model_id}_final_iti_{k_heads}_{scale}"
-        }
-    )
+    print("saving model responses")
+    import pandas as pd
+    pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/{model_id}_answers_{k_heads}_{scale}_mha.csv")
 
 if __name__ == "__main__":
     main()

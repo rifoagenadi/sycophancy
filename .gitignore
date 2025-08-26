@@ -1,5 +1,5 @@
 # Byte-compiled / optimized / DLL files
-__pycache__/
+__pycache__
 *.py[cod]
 *$py.class
 
@@ -126,8 +126,11 @@ poetry.lock
 .python-version
 
 # PEP 582; used by e.g. pythonpdm
-__pypackages__/
+__pypackages__
 
+batch_job
+attention_vis
+predictions
 evaluation_jsonl
 *.pth
 *.sh

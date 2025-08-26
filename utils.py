@@ -3,14 +3,34 @@ from transformers import AutoProcessor, Gemma3ForConditionalGeneration, AutoMode
 import requests
 import torch
 import os
+from datasets import load_dataset
+
+def load_test_data(dataset_id):
+    if dataset_id == 'truthfulqa':
+        ds = load_dataset("truthfulqa/truthful_qa", "generation")
+        questions_test = ds['validation']['question'][int(0.80*len(ds['validation'])):]
+        correct_answers_test = ds['validation']['correct_answers'][int(0.80*len(ds['validation'])):]
+    elif dataset_id == 'scienceqa':
+        ds = load_dataset("derek-thomas/ScienceQA")
+        questions_test = ds['test']['question']
+        correct_answers_idxs = ds['validation']['answer']
+        correct_answers_test = [x[idx] for idx, x in zip(correct_answers_idxs, ds['validation']['choices'])]
+    else:
+        raise('Dataset not supported')
+    return questions_test, correct_answers_test
 
 def load_model(model_id):
     if 'gemma-3' in model_id:
         model = Gemma3ForConditionalGeneration.from_pretrained("google/gemma-3-4b-it", device_map="auto")
         processor = AutoProcessor.from_pretrained("google/gemma-3-4b-it")
-    else:
+    elif 'qwen-3':
+        model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-4B-Instruct-2507", device_map='auto')
+        processor = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
+    elif 'llama-3.2':
         model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-3B-Instruct", device_map='auto')
         processor = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B-Instruct")
+    else:
+        raise('Model ID Not supported, fail to load')
 
     return model, processor
 
@@ -63,8 +83,6 @@ def to_request(id, question, correct_answer, prediction, model_type="gpt-4o-2024
                         "max_tokens": 4
                         }
                 }
-
-
 
 system_prompt = "You are a helpful assistant."
 # system_prompt = "You are an objective assistant who stays truthful and helpful. You will not blindly adhere or agree to the user's statements if they are incorrect. You will provide the most accurate and helpful information to the best of your ability."

@@ -5,7 +5,6 @@ import warnings
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-
 def extract_mha_activation(model, processor, inputs):
     inputs = inputs.to(model.device)
 
@@ -56,9 +55,15 @@ def extract_mha_activation(model, processor, inputs):
     stacked_tensors = []
     for layer_name, states in hidden_states.items():
         if 'gemma' in str(type(model)).lower():
-            layer_hidden_state = states[0][0][:, -2, :]  # shape: [1, hidden_dim],  -2 since we take the last content token (not newline in -1)
+            layer_hidden_state = states[0][0][:, -3, :]  # output shape: [1, hidden_dim],  -3 since we take the last content token (not newline in -1 and special token in -2)
+            # last_index = len(inputs) - 1 - inputs.tolist()[::-1].index(105)
+            # layer_hidden_state = states[0][0][:, last_index:, :]
+            # layer_hidden_state = layer_hidden_state.mean(dim=1)  # shape: [1, hidden_dim]
         else:
-            layer_hidden_state = states[0][0][:, -1, :]
+            layer_hidden_state = states[0][0][:, -2, :]
+            # last_index = len(inputs) - 1 - inputs.tolist()[::-1].index(128006)
+            # layer_hidden_state = states[0][0][:, last_index:, :]
+            # layer_hidden_state = layer_hidden_state.mean(dim=1)  # shape: [1, hidden_dim]
         new_shape = layer_hidden_state.size()[:-1] + (NUM_HEADS, HEAD_DIM) # shape: [1, num_head, head_dim]
         layer_hidden_state = layer_hidden_state.view(new_shape)
         stacked_tensors.append(layer_hidden_state)
@@ -117,9 +122,9 @@ def extract_mlp_activation(model, processor, inputs):
     stacked_tensors = []
     for layer_name, states in hidden_states.items():
         if 'gemma' in str(type(model)).lower():
-            layer_hidden_state = states[0][0][:, -2, :]  # shape: [1, hidden_dim],  -2 since we take the last content token (not newline in -1)
+            layer_hidden_state = states[0][0][:, -3, :]
         else:
-            layer_hidden_state = states[0][0][:, -1, :] 
+            layer_hidden_state = states[0][0][:, -2, :] 
         stacked_tensors.append(layer_hidden_state)
     
     final_stacked_tensor = torch.cat(stacked_tensors, dim=0)
@@ -176,9 +181,12 @@ def extract_residual_activation(model, processor, inputs):
     stacked_tensors = []
     for layer_name, states in hidden_states.items():
         if 'gemma' in str(type(model)).lower():
-            layer_hidden_state = states[0][0][:, -2, :]  # shape: [1, hidden_dim],  -3 since we take the last content token (not special tokens)
+            layer_hidden_state = states[0][0][:, -3, :]  # shape: [1, hidden_dim],  -3 since we take the last content token (not special tokens)
         else:
-            layer_hidden_state = states[0][0][:, -1, :]  # shape: [1, hidden_dim],  -4 since we take the last content token (not special tokens)
+            layer_hidden_state = states[0][0][:, -2, :]  # output shape: [1, hidden_dim]
+            # last_index = len(inputs) - 1 - inputs.tolist()[::-1].index(128006)
+            # layer_hidden_state = states[0][0][:, last_index:, :]
+            # layer_hidden_state = layer_hidden_state.mean(dim=1)  # shape: [1, hidden_dim]
         stacked_tensors.append(layer_hidden_state)
     
     final_stacked_tensor = torch.cat(stacked_tensors, dim=0)

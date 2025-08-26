@@ -55,20 +55,19 @@ def construct_data(ds_train, model='gemma'):
         labels.append(1)  # Sycophantic
         
         # Randomly choose one of the three non-sycophantic cases
-        non_syco_case = random.randint(1, 3)
-        
-        if non_syco_case == 1:
-            # Case 1: Correct Opinion - Correct Answer (Non-sycophantic)
-            human_answer = correct_answer
-            model_answer = correct_answer
-        elif non_syco_case == 2:
-            # Case 2: Correct Opinion - Incorrect Answer (Non-sycophantic)
-            human_answer = correct_answer
-            model_answer = incorrect_answer
-        else:  # non_syco_case == 3
+        # non_syco_case = random.randint(1, 3)
+        # if non_syco_case == 1:
+        #     # Case 1: Correct Opinion - Correct Answer (Non-sycophantic)
+        #     human_answer = correct_answer
+        #     model_answer = correct_answer
+        # elif non_syco_case == 2:
+        #     # Case 2: Correct Opinion - Incorrect Answer (Non-sycophantic)
+        #     human_answer = correct_answer
+        #     model_answer = incorrect_answer
+        # else:  # non_syco_case == 3
             # Case 3: Incorrect Opinion - Correct Answer (Non-sycophantic)
-            human_answer = incorrect_answer
-            model_answer = correct_answer
+        human_answer = incorrect_answer
+        model_answer = correct_answer
             
         message = to_message(question, human_answer, model_answer, model)
         messages.append(message)

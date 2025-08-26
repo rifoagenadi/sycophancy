@@ -9,31 +9,9 @@ import importlib
 import utils
 from utils import generate_and_decode_new_tokens, to_request, create_anthropic_batch_job
 
-def get_keys(accuracy_dict, chosen_layer, k=8):
-    """
-    Returns the top k keys from the accuracy dictionary based on highest accuracy values.
-    
-    Parameters:
-    -----------
-    accuracy_dict : dict
-        Dictionary with keys in format 'layer_head' and values representing accuracies
-    k : int, default=5
-        Number of top keys to return
-        
-    Returns:
-    --------
-    list
-        List of tuples containing (key, accuracy) for the top k accuracies
-    """
-    # Sort the dictionary items by value (accuracy) in descending order
-    sorted_items = sorted(accuracy_dict.items(), key=lambda x: x[1], reverse=True)
-    
-    # Return the top k items (or all if k is larger than dictionary size)
-    return [x[0] for x in sorted_items if str(chosen_layer) in x[0]][:k]
-
-def get_probe_vectors(top_k_heads, model_id, scale=5, num_layers=None, head_dim=None, num_heads=None, use_random_direction=None, direction_type='probe_weight'):
+def get_probe_vectors(chosen_heads, model_id, scale=-20, num_layers=None, head_dim=None, num_heads=None, use_random_direction=None, direction_type='trained_probe'):
     target_heads = {}
-    for head_string in top_k_heads:
+    for head_string in chosen_heads:
         layer, head = head_string.split('_')
         layer = int(layer)
         head = int(head)
@@ -45,7 +23,7 @@ def get_probe_vectors(top_k_heads, model_id, scale=5, num_layers=None, head_dim=
     probes = {key: torch.zeros(head_dim*num_heads) for key in range(num_layers)}
     for layer in target_heads:
         for head in target_heads[layer]:
-            if direction_type == 'probe_weight':
+            if direction_type == 'trained_probe':
                 current_probe = torch.load(f'linear_probe/trained_probe/{model_id}/linear_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
             elif direction_type == 'mean_mass':
                 current_probe = torch.load(f'linear_probe/mean_direction/{model_id}/linear_probe_{layer}_{head}.pth').squeeze()
@@ -60,17 +38,14 @@ def main():
     parser = argparse.ArgumentParser(description='Inference script with arguments')
     parser.add_argument('--model_id', type=str, default='gemma-3', help='Model ID to use')
     parser.add_argument('--chosen_layer', type=int, default=12, help='Layer to intervene')
-    parser.add_argument('--k_heads', type=int, default=16, help='Number of top heads to use')
     parser.add_argument('--scale', type=float, default=-20, help='Scale factor for probe vectors')
-    parser.add_argument('--direction_type', type=str, default='mean_mass', help='Direction type for probe vectors')
-
+    parser.add_argument('--direction_type', type=str, default='trained_probe', help='Direction type for probe vectors')
     parser.add_argument('--api_key', type=str, default="", 
-                        help='API key for Anthropic')
+                        help='API key for OpenAI')
     
     args = parser.parse_args()
     
     model_id = args.model_id
-    k_heads = args.k_heads
     chosen_layer = args.chosen_layer
     scale = args.scale
     api_key = args.api_key
@@ -80,7 +55,7 @@ def main():
     model.eval()
     
     print(f"Loading accuracies for model: {model_id}")
-    accuracies = pickle.load(open(f'linear_probe/trained_probe/{model_id}/accuracies_dict.pkl', 'rb'))
+    accuracies = pickle.load(open(f'linear_probe/trained_probe/{model_id}/accuracies_dict_mha.pkl', 'rb'))
     config = model.config
     
     # Set model parameters based on model type
@@ -95,12 +70,12 @@ def main():
         NUM_HEADS = model.config.num_attention_heads
         HEAD_DIM = model.config.head_dim
     
-    print(f"Getting top {k_heads} heads")
-    top_k_heads = get_keys(accuracies, chosen_layer=chosen_layer, k=k_heads)
-    print(f"Top heads selected: {top_k_heads}")
+    print(f"Getting heads in layer {chosen_layer} with scale {scale}")
+    chosen_heads = [f"{chosen_layer}_{head}" for head in range(NUM_HEADS)]
+    print(f"Heads selected: {chosen_heads}")
     
     print(f"Creating probe vectors with scale {scale}")
-    linear_probes = get_probe_vectors(top_k_heads, model_id, scale=scale, 
+    linear_probes = get_probe_vectors(chosen_heads, model_id, scale=scale, 
                                       num_layers=NUM_LAYERS, head_dim=HEAD_DIM, num_heads=NUM_HEADS,
                                       use_random_direction=False,
                                       direction_type=args.direction_type
@@ -139,21 +114,25 @@ def main():
         res_1, res_2 = generate_and_decode_new_tokens(question, pv_model, processor, model_id)
         initial_answer.append(res_1)
         final_answer.append(res_2)
-    
-    print("Creating batch job for initial answers")
+
+    print("saving model responses")
+    import pandas as pd
+    pd.DataFrame({'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/answers_{chosen_layer}_{scale}_mha.csv")
+
+    print("Crzeating batch job for initial answers")
     requests = [to_request(f'truthfulqa_{model_id}_initial_iti-{i}', q, a, p) 
                    for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, initial_answer))]
     
-    # create_anthropic_batch_job(requests, api_key=api_key)
     import json
-    with open(f"truthfulqa-{model_id}_initial_iti_{k_heads}_{scale}_mha_layer_{chosen_layer}.jsonl", 'w') as f:
+    initial_answer_path = f"batch_job/initial_{chosen_layer}_mha.jsonl"
+    with open(initial_answer_path, 'w') as f:
         for item in requests:
             json_line = json.dumps(item)
             f.write(json_line + '\n')
     from openai import OpenAI
-    client = OpenAI(api_key="")
+    client = OpenAI(api_key=args.api_key)
     batch_input_file = client.files.create(
-        file=open(f"truthfulqa-{model_id}_initial_iti_{k_heads}_{scale}_mha_layer_{chosen_layer}.jsonl", "rb"),
+        file=open(initial_answer_path, "rb"),
         purpose="batch"
     )
     batch_input_file_id = batch_input_file.id
@@ -162,7 +141,7 @@ def main():
         endpoint="/v1/chat/completions",
         completion_window="24h",
         metadata={
-            "description": f"truthfulqa-{model_id}_initial_iti_{k_heads}_{scale}_mha_layer_{chosen_layer}"
+            "description": f"truthfulqa-{model_id}_initial_iti_{scale}_mha_layer_{chosen_layer}"
         }
     )
 
@@ -173,13 +152,14 @@ def main():
     else:
         requests = [to_request(f'truthfulqa_{model_id}_final_iti-{i}', q, a, p) 
                    for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, final_answer))]
-    with open(f"truthfulqa-{model_id}_final_iti_{k_heads}_{scale}_mha_layer_{chosen_layer}.jsonl", 'w') as f:
+    final_answer_path = f"batch_job/final_{chosen_layer}_mha.jsonl"
+    with open(final_answer_path, 'w') as f:
         for item in requests:
             json_line = json.dumps(item)
             f.write(json_line + '\n')
-    # create_anthropic_batch_job(requests, api_key=api_key)
+
     batch_input_file = client.files.create(
-        file=open(f"truthfulqa-{model_id}_final_iti_{k_heads}_{scale}_mha_layer_{chosen_layer}.jsonl", "rb"),
+        file=open(final_answer_path, "rb"),
         purpose="batch"
     )
     batch_input_file_id = batch_input_file.id
@@ -188,7 +168,7 @@ def main():
         endpoint="/v1/chat/completions",
         completion_window="24h",
         metadata={
-            "description": f"truthfulqa-{model_id}_final_iti_{k_heads}_{scale}_mha_layer_{chosen_layer}"
+            "description": f"truthfulqa-{model_id}_final_iti_{scale}_mha_layer_{chosen_layer}"
         }
     )
 

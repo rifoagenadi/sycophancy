@@ -9,30 +9,8 @@ import importlib
 import utils
 from utils import generate_and_decode_new_tokens, to_request, create_anthropic_batch_job
 
-def get_top_layers(accuracy_dict, k=1):
-    """
-    Returns the top k keys from the accuracy dictionary based on highest accuracy values.
-    
-    Parameters:
-    -----------
-    accuracy_dict : dict
-        Dictionary with keys in format 'layer_head' and values representing accuracies
-    k : int, default=5
-        Number of top keys to return
-        
-    Returns:
-    --------
-    list
-        List of tuples containing (key, accuracy) for the top k accuracies
-    """
-    # Sort the dictionary items by value (accuracy) in descending order
-    sorted_items = sorted(accuracy_dict.items(), key=lambda x: x[1], reverse=True)
-    
-    # Return the top k items (or all if k is larger than dictionary size)
-    return [x[0] for x in sorted_items[:min(k, len(sorted_items))]]
-
-def get_probe_vectors(top_k_layers, model_id, scale, num_layers, hidden_dim, use_random_direction=None):
-    target_layers = [int(layer) for layer in top_k_layers]
+def get_probe_vectors(chosen_layers, model_id, scale, num_layers, hidden_dim, use_random_direction=None):
+    target_layers = [int(layer) for layer in chosen_layers]
 
     probes = {key: torch.zeros(hidden_dim) for key in range(num_layers)}
     for layer in target_layers:
@@ -47,7 +25,7 @@ def get_probe_vectors(top_k_layers, model_id, scale, num_layers, hidden_dim, use
 def main():
     parser = argparse.ArgumentParser(description='Inference script with arguments')
     parser.add_argument('--model_id', type=str, default='gemma-3', help='Model ID to use')
-    parser.add_argument('--k_layers', type=int, default=16, help='Number of top heads to use')
+    parser.add_argument('--chosen_layer', type=int, default=1, help='Number of top heads to use')
     parser.add_argument('--scale', type=float, default=-20, help='Scale factor for probe vectors')
     parser.add_argument('--api_key', type=str, default="", 
                         help='API key for Anthropic')
@@ -55,7 +33,7 @@ def main():
     args = parser.parse_args()
     
     model_id = args.model_id
-    k_layers = args.k_layers
+    chosen_layer = args.chosen_layer
     scale = args.scale
     api_key = args.api_key
     
@@ -79,14 +57,14 @@ def main():
         NUM_HEADS = model.config.num_attention_heads
         HEAD_DIM = model.config.head_dim
     
-    print(f"Getting top {k_layers} heads")
-    top_k_layers = get_top_layers(accuracies, k_layers)
-    print(f"Top layers selected: {top_k_layers}")
+    print(f"Getting {chosen_layer} probes")
+    chosen_layers = [chosen_layer]
+    print(f"Top layers selected: {chosen_layers}")
     
     print(f"Creating probe vectors with scale {scale}")
-    linear_probes = get_probe_vectors(top_k_layers, model_id, scale=scale, 
+    linear_probes = get_probe_vectors(chosen_layers, model_id, scale=scale, 
                                       num_layers=NUM_LAYERS, hidden_dim=HIDDEN_DIM,
-                                    #   use_random_direction=True
+                                      use_random_direction=False
                                       )
     
     print("Setting up intervention components")
@@ -96,7 +74,6 @@ def main():
                 "intervention": pv.AdditionIntervention(
                     source_representation=linear_probes[i].to("cuda")
                 )
-                # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     else:
         target_components = [{
@@ -104,7 +81,6 @@ def main():
                 "intervention": pv.AdditionIntervention(
                     source_representation=linear_probes[i].to("cuda")
                 )
-                # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     
     print("Creating interventable model")
@@ -125,23 +101,22 @@ def main():
 
     print("saving model responses")
     import pandas as pd
-    pd.DataFrame({'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"truthfulqa-{model_id}_answers_iti_{k_layers}_{scale}_mlp.csv")
+    pd.DataFrame({'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/answers_{chosen_layer}_{scale}_mlp.csv")
 
     
     print("Creating batch job for initial answers")
     requests = [to_request(f'truthfulqa_{model_id}_initial_iti_mlp-{i}', q, a, p) 
                    for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, initial_answer))]
-    
-    # create_anthropic_batch_job(requests, api_key=api_key)
+    initial_answer_path =  f"batch_job/initial_{chosen_layer}_mlp.jsonl"
     import json
-    with open(f"truthfulqa-{model_id}_initial_iti_{k_layers}_{scale}_mlp.jsonl", 'w') as f:
+    with open(initial_answer_path, 'w') as f:
         for item in requests:
             json_line = json.dumps(item)
             f.write(json_line + '\n')
     from openai import OpenAI
-    client = OpenAI(api_key="")
+    client = OpenAI(api_key=args.api_key)
     batch_input_file = client.files.create(
-        file=open(f"truthfulqa-{model_id}_initial_iti_{k_layers}_{scale}_mlp.jsonl", "rb"),
+        file=open(initial_answer_path, "rb"),
         purpose="batch"
     )
     batch_input_file_id = batch_input_file.id
@@ -150,7 +125,7 @@ def main():
         endpoint="/v1/chat/completions",
         completion_window="24h",
         metadata={
-            "description": f"truthfulqa-{model_id}_initial_iti_{k_layers}_{scale}_mlp"
+            "description": f"truthfulqa-{model_id}_initial_iti_{chosen_layer}_{scale}_mlp"
         }
     )
 
@@ -161,13 +136,13 @@ def main():
     else:
         requests = [to_request(f'truthfulqa_{model_id}_final_iti_mlp-{i}', q, a, p) 
                    for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, final_answer))]
-    with open(f"truthfulqa-{model_id}_final_iti_{k_layers}_{scale}_mlp.jsonl", 'w') as f:
+    final_answer_path =  f"batch_job/final_{chosen_layer}_mlp.jsonl"
+    with open(final_answer_path, 'w') as f:
         for item in requests:
             json_line = json.dumps(item)
             f.write(json_line + '\n')
-    # create_anthropic_batch_job(requests, api_key=api_key)
     batch_input_file = client.files.create(
-        file=open(f"truthfulqa-{model_id}_final_iti_{k_layers}_{scale}_mlp.jsonl", "rb"),
+        file=open(final_answer_path, "rb"),
         purpose="batch"
     )
     batch_input_file_id = batch_input_file.id
@@ -176,7 +151,7 @@ def main():
         endpoint="/v1/chat/completions",
         completion_window="24h",
         metadata={
-            "description": f"truthfulqa-{model_id}_final_iti_{k_layers}_{scale}_mlp"
+            "description": f"truthfulqa-{model_id}_final_iti_{chosen_layer}_{scale}_mlp"
         }
     )
 

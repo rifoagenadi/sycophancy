@@ -22,7 +22,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 
 # Assuming these utils are in the same directory or accessible via PYTHONPATH
-from utils import load_model
+from transformers import AutoProcessor, Gemma3ForConditionalGeneration, AutoModelForCausalLM, AutoTokenizer
 import linear_probe_data_utils # Needs reload if changed during session
 import extract_activation # Needs reload if changed during session
 from linear_probe import LinearProbe
@@ -136,7 +136,7 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
         best_val_acc = max(best_val_acc, val_acc) # Keep track of best acc
 
     # Save the trained linear probe
-    save_dir = os.path.join(output_dir, model_id)
+    save_dir = os.path.join(output_dir, model_id.split('/')[-1])
     os.makedirs(save_dir, exist_ok=True)
     if activation_type == 'mha':
         save_path = os.path.join(save_dir, f"linear_probe_{target_component}.pth")
@@ -175,12 +175,12 @@ def plot_mha_heatmap(accuracies, model_id, num_layers, num_heads, output_dir):
 
     plt.xlabel('Head Index')
     plt.ylabel('Layer Index')
-    plt.title(f'Accuracy Heatmap by Layer and Head (MHA) - {model_id}')
+    plt.title(f"Accuracy Heatmap by Layer and Head (MHA) - {model_id.split('/')[-1]}", fontsize=16)
 
     plt.xticks(np.arange(0, num_heads, max(1, num_heads // 16))) # Adjust ticks dynamically
     plt.yticks(np.arange(0, num_layers, max(1, num_layers // 10)))
 
-    save_path = os.path.join(output_dir, model_id, f'{model_id}_accuracy_heatmap_mha.png')
+    save_path = os.path.join(output_dir, model_id.split('/')[-1], f"{model_id.split('/')[-1]}_accuracy_heatmap_mha.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"Saved heatmap to {save_path}")
     plt.close() # Close figure to prevent display in non-interactive environments
@@ -208,13 +208,13 @@ def plot_layer_line(accuracies, model_id, num_layers, output_dir, activation_typ
 
     plt.xlabel('Layer Number', fontsize=12)
     plt.ylabel('Validation Accuracy (%)', fontsize=12)
-    plt.title(f'Accuracy by Layer ({activation_type} Output) - {model_id}', fontsize=14)
+    plt.title(f"Accuracy by Layer ({activation_type} Output) - {model_id.split('/')[-1]}", fontsize=14)
     plt.grid(True, alpha=0.3)
     plt.ylim(min(40, min(accuracies_sorted)-5), max(90, max(accuracies_sorted)+5)) # Dynamic ylim
     plt.xticks(np.arange(0, num_layers, max(1, num_layers // 14)))
     plt.legend(loc='lower right')
     plt.tight_layout()
-    save_path = os.path.join(output_dir, model_id, f'{model_id}_accuracy_line_{activation_type}.png')
+    save_path = os.path.join(output_dir, model_id.split('/')[-1], f"{model_id.split('/')[-1]}_accuracy_line_{activation_type}.png")
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"Saved line plot to {save_path}")
     plt.close() # Close figure
@@ -228,7 +228,8 @@ def main(args):
 
     # Load Model and Processor
     print(f"Loading model: {args.model_id}...")
-    model, processor = load_model(args.model_id)
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, device_map='auto')
+    processor = AutoTokenizer.from_pretrained(args.model_id)
     model.eval()
     model.to(args.device)
 
@@ -241,18 +242,16 @@ def main(args):
         HIDDEN_DIM = config.hidden_size
         NUM_HEADS = config.num_attention_heads
         HEAD_DIM = config.head_dim
-        MLP_DIM = 10240
-    else: # Assuming Llama-like structure otherwise
+        MLP_DIM = 10240 #hardcoded
+    else: # hardcoded for llama 3.2
         config = model.config
         NUM_LAYERS = config.num_hidden_layers
         HIDDEN_DIM = config.hidden_size
         NUM_HEADS = config.num_attention_heads
-        # HEAD_DIM might not exist directly, calculate if needed for MHA
-        HEAD_DIM = config.hidden_size // config.num_attention_heads if args.activation_type == 'mha' else None
+        HEAD_DIM = config.head_dim
         MLP_DIM = 8192
         if HEAD_DIM is None and args.activation_type == 'mha':
              raise ValueError("Cannot determine HEAD_DIM for MHA on this model architecture.")
-
 
     print(f"Model Config: Layers={NUM_LAYERS}, Heads={NUM_HEADS}, HiddenDim={HIDDEN_DIM}, HeadDim={HEAD_DIM}")
 
@@ -262,7 +261,7 @@ def main(args):
     ds = load_dataset("truthfulqa/truthful_qa", "generation")
     ds_train_val = ds['validation'] # Use the full validation set for train/val split
     ds_train_split = ds_train_val[:int(0.8*len(ds_train_val))] # 80% for training activation extraction/probe training
-    # ds_val_split = ds_train_val[int(0.8*len(ds_train_val)):] # 20% held out? The notebooks used same split for extraction and training
+    # ds_test_split = ds_train_val[int(0.8*len(ds_train_val)):] # 20% held out? The notebooks used same split for extraction and training
 
     chats, labels = construct_data(ds_train_split, model=args.model_id.split('-')[0]) # Simple model name
 
@@ -280,7 +279,8 @@ def main(args):
     # Split data for probe training
     print("Splitting data for probe training...")
     train_tok, val_tok, train_labels, val_labels = train_test_split(
-        tokenized_data, numerical_labels, test_size=0.2, random_state=3407
+        tokenized_data, numerical_labels, test_size=0.2, 
+        random_state=3407
     )
 
     # Extract Activations
@@ -312,7 +312,7 @@ def main(args):
     print("Starting probe training...")
     accuracies = {}
     if args.activation_type == 'mha':
-        probe_input = HEAD_DIM
+        probe_input_dim = HEAD_DIM
     elif args.activation_type == 'mlp':
         probe_input_dim = MLP_DIM
     elif args.activation_type == 'residual':
@@ -339,7 +339,7 @@ def main(args):
         raise ValueError("Invalid activation_type specified")
 
     # Save Accuracies
-    output_subdir = os.path.join(args.output_dir, args.model_id)
+    output_subdir = os.path.join(args.output_dir, args.model_id.split('/')[-1])
     os.makedirs(output_subdir, exist_ok=True)
     acc_filename = f"accuracies_dict_{args.activation_type}.pkl"
     acc_path = os.path.join(output_subdir, acc_filename)
@@ -358,11 +358,11 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train linear probes on LLM activations.")
-    parser.add_argument("--model_id", type=str, required=True, help="Hugging Face model ID (e.g., 'gemma-3', 'meta-llama/Meta-Llama-3-8B').")
+    parser.add_argument("--model_id", type=str, required=True, help="Hugging Face model ID (e.g., 'gemma-3'")
     parser.add_argument("--activation_type", type=str, required=True, choices=['mha', 'mlp', 'residual'], help="Type of activation to extract and train on ('mha', 'mlp', or 'residual').")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for probe training.")
+    parser.add_argument("--batch_size", type=int, default=25, help="Batch size for probe training.")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for Adam optimizer.")
-    parser.add_argument("--epochs", type=int, default=16, help="Number of epochs for probe training.")
+    parser.add_argument("--epochs", type=int, default=25, help="Number of epochs for probe training.")
     parser.add_argument("--output_dir", type=str, default="trained_probe", help="Directory to save trained probes and results.")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use ('cuda' or 'cpu').")
 
