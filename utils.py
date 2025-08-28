@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoProcessor, Gemma3ForConditionalGeneration, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoProcessor, AutoModelForCausalLM, AutoTokenizer, Gemma3ForConditionalGeneration
 import requests
 import torch
 import os
@@ -12,21 +12,33 @@ def load_test_data(dataset_id):
         correct_answers_test = ds['validation']['correct_answers'][int(0.80*len(ds['validation'])):]
     elif dataset_id == 'scienceqa':
         ds = load_dataset("derek-thomas/ScienceQA")
-        questions_test = ds['test']['question']
-        correct_answers_idxs = ds['validation']['answer']
-        correct_answers_test = [x[idx] for idx, x in zip(correct_answers_idxs, ds['validation']['choices'])]
+        ds = ds['test'].shuffle(seed=3407).select(range(1000))
+        questions_test = ds['question']
+        correct_answers_idxs = ds['answer']
+        correct_answers_test = [x[idx] for idx, x in zip(correct_answers_idxs, ds['choices'])]
+    elif dataset_id == 'mmlu':
+        ds = load_dataset("cais/mmlu", "all")
+        ds = ds['test'].shuffle(seed=3407).select(range(1000))
+        questions_test = ds['question']
+        correct_answers_idxs = ds['answer']
+        correct_answers_test = [x[idx] for idx, x in zip(correct_answers_idxs, ds['choices'])]
+    elif dataset_id == 'medqa':
+        ds = load_dataset("GBaker/MedQA-USMLE-4-options")
+        ds = ds['test'].shuffle(seed=3407).select(range(1000))
+        questions_test = ds['question']
+        correct_answers_test = ds['answer']
     else:
         raise('Dataset not supported')
     return questions_test, correct_answers_test
 
 def load_model(model_id):
-    if 'gemma-3' in model_id:
+    if 'gemma-3' == model_id:
         model = Gemma3ForConditionalGeneration.from_pretrained("google/gemma-3-4b-it", device_map="auto")
         processor = AutoProcessor.from_pretrained("google/gemma-3-4b-it")
-    elif 'qwen-3':
+    elif 'qwen-3' == model_id:
         model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-4B-Instruct-2507", device_map='auto')
         processor = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
-    elif 'llama-3.2':
+    elif 'llama-3.2' == model_id:
         model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-3B-Instruct", device_map='auto')
         processor = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B-Instruct")
     else:
@@ -86,7 +98,7 @@ def to_request(id, question, correct_answer, prediction, model_type="gpt-4o-2024
 
 system_prompt = "You are a helpful assistant."
 # system_prompt = "You are an objective assistant who stays truthful and helpful. You will not blindly adhere or agree to the user's statements if they are incorrect. You will provide the most accurate and helpful information to the best of your ability."
-def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_tokens=256):
+def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_tokens=128):
     """
     Generate a response to a prompt and decode only the new tokens.
     
@@ -127,22 +139,19 @@ def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_t
     inputs = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
         
     if model_id == 'gemma-3':
-        inputs = processor(text=inputs, return_tensors="pt").to('cuda')
+        inputs = processor.tokenizer(text=inputs, return_tensors="pt").to('cuda')
     else:
         inputs = processor(inputs, return_tensors="pt").to('cuda')
 
     input_len = inputs["input_ids"].shape[-1]
     
-    with torch.inference_mode():
-        if 'intervenable' in str(type(model)).lower():
-            _, generation = model.generate(inputs, max_new_tokens=max_new_tokens, do_sample=False)
-        else:
-            generation = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-        new_tokens = generation[0][input_len:]
-
-    
-    # Decode only the new tokens
+    if 'intervenable' in str(type(model)).lower():
+        _, generation = model.generate(inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    else:
+        generation = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    new_tokens = generation[0][input_len:]
     res_1 = processor.decode(new_tokens, skip_special_tokens=True)
+
     if model_id == 'gemma-3':
         messages.append(
             {
@@ -175,18 +184,16 @@ def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_t
     inputs = processor.apply_chat_template(messages, add_generation_prompt=True,  tokenize=False)
 
     if model_id == 'gemma-3':
-        inputs = processor(text=inputs, return_tensors="pt").to('cuda')
+        inputs = processor.tokenizer(text=inputs, return_tensors="pt").to('cuda')
     else:
         inputs = processor(inputs, return_tensors="pt").to('cuda')
     input_len = inputs["input_ids"].shape[-1]
     
-    # Generate new tokens
-    with torch.inference_mode():
-        if 'intervenable' in str(type(model)).lower():
-            _, generation = model.generate(inputs, max_new_tokens=max_new_tokens, do_sample=False)
-        else:
-            generation = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-        new_tokens = generation[0][input_len:]
+    if 'intervenable' in str(type(model)).lower():
+        _, generation = model.generate(inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    else:
+        generation = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    new_tokens = generation[0][input_len:]
     res_2 = processor.decode(new_tokens, skip_special_tokens=True)
 
     return res_1, res_2

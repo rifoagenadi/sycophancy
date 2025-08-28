@@ -7,3 +7,4 @@ class LinearProbe(nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+        

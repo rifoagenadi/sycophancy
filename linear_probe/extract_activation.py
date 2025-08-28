@@ -55,7 +55,7 @@ def extract_mha_activation(model, processor, inputs):
     stacked_tensors = []
     for layer_name, states in hidden_states.items():
         if 'gemma' in str(type(model)).lower():
-            layer_hidden_state = states[0][0][:, -3, :]  # output shape: [1, hidden_dim],  -3 since we take the last content token (not newline in -1 and special token in -2)
+            layer_hidden_state = states[0][0][:, -3, :]  # output shape: [1, hidden_dim],  -3 since we take the last content token (not newline in -1 and eos token in -2)
             # last_index = len(inputs) - 1 - inputs.tolist()[::-1].index(105)
             # layer_hidden_state = states[0][0][:, last_index:, :]
             # layer_hidden_state = layer_hidden_state.mean(dim=1)  # shape: [1, hidden_dim]

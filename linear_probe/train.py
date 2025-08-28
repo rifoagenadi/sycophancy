@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+from utils import load_model
 
 # Assuming these utils are in the same directory or accessible via PYTHONPATH
 from transformers import AutoProcessor, Gemma3ForConditionalGeneration, AutoModelForCausalLM, AutoTokenizer
@@ -56,7 +57,7 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
         # Determine pad_token_id based on model type
         is_gemma = 'gemma' in str(type(model)).lower()
         if is_gemma:
-            pad_val = processor.tokenizer.pad_token_id if processor.tokenizer.pad_token_id is not None else processor.tokenizer.eos_token_id
+            pad_val = processor.tokenizer.pad_token_id if processor.tokenizer.pad_token_id is not None else processor.eos_token_id
         else:
             pad_val = processor.pad_token_id if processor.pad_token_id is not None else processor.eos_token_id
 
@@ -228,8 +229,7 @@ def main(args):
 
     # Load Model and Processor
     print(f"Loading model: {args.model_id}...")
-    model = AutoModelForCausalLM.from_pretrained(args.model_id, device_map='auto')
-    processor = AutoTokenizer.from_pretrained(args.model_id)
+    model, processor = load_model(args.model_id)
     model.eval()
     model.to(args.device)
 
