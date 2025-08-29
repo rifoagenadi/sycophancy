@@ -31,7 +31,7 @@ def get_top_k_keys(accuracy_dict, k=16):
     # Return the top k items (or all if k is larger than dictionary size)
     return [x[0] for x in sorted_items[:min(k, len(sorted_items))]]
 
-def get_probe_vectors(top_k_heads, model_folder_path, scale=5, num_layers=None, head_dim=None, num_heads=None, use_random_direction=None, direction_type='probe_weight'):
+def get_probe_vectors(top_k_heads, model_id, scale=5, num_layers=None, head_dim=None, num_heads=None, use_random_direction=None, direction_type='probe_weight'):
     target_heads = {}
     for head_string in top_k_heads:
         layer, head = head_string.split('_')
@@ -46,9 +46,9 @@ def get_probe_vectors(top_k_heads, model_folder_path, scale=5, num_layers=None, 
     for layer in target_heads:
         for head in target_heads[layer]:
             if direction_type == 'probe_weight':
-                current_probe = torch.load(f'linear_probe/trained_probe/{model_folder_path}/linear_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
+                current_probe = torch.load(f'linear_probe/trained_probe/{model_id}/linear_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
             elif direction_type == 'mean_mass':
-                current_probe = torch.load(f'linear_probe/mean_direction/{model_folder_path}/linear_probe_{layer}_{head}.pth').squeeze()
+                current_probe = torch.load(f'linear_probe/mean_direction/{model_id}/linear_probe_{layer}_{head}.pth').squeeze()
             if use_random_direction:
                 current_probe = torch.normal(mean=current_probe.mean(), std=current_probe.std(), size=current_probe.shape)
             current_probe = current_probe / torch.norm(current_probe, p=2)
@@ -75,16 +75,7 @@ def main():
     model, processor = load_model(model_id)
     model.eval()
     
-    if model_id == 'gemma-3':
-        model_folder_path = 'gemma-3-4b-it' 
-    elif model_id == 'qwen-3':
-        model_folder_path = 'Qwen3-4B-Instruct-2507'
-    elif model_id == 'llama-3.2':
-        model_folder_path = 'Llama-3.2-3B-Instruct'
-    else:
-        raise('model_id not supported')
-    print(f"Loading probe from from {model_folder_path}")
-    accuracies = pickle.load(open(f'linear_probe/trained_probe/{model_folder_path}/accuracies_dict_mha.pkl', 'rb'))
+    accuracies = pickle.load(open(f'linear_probe/trained_probe/{model_id}/accuracies_dict_mha.pkl', 'rb'))
     config = model.config
     
     # Set model parameters based on model type
@@ -104,7 +95,7 @@ def main():
     print(f"Top heads selected: {top_k_heads}")
     
     print(f"Creating probe vectors with scale {scale}")
-    linear_probes = get_probe_vectors(top_k_heads, model_folder_path, scale=scale, 
+    linear_probes = get_probe_vectors(top_k_heads, model_id, scale=scale, 
                                       num_layers=NUM_LAYERS, head_dim=HEAD_DIM, num_heads=NUM_HEADS,
                                       use_random_direction=False,
                                       direction_type=args.direction_type

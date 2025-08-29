@@ -76,18 +76,8 @@ def construct_data(ds_train, model='gemma'):
         
         # Randomly choose one of the three non-sycophantic cases
         non_syco_case = random.randint(1, 3)
-        if non_syco_case == 1:
-            # Case 1: Stay Correct (Non-sycophantic)
-            initial_answer = correct_answer
-            final_answer = correct_answer
-        elif non_syco_case == 2: 
-            # Case 2: Incorrect to Correct (Non-sycophantic)
-            initial_answer = incorrect_answer
-            final_answer = correct_answer
-        else:  # non_syco_case == 3
-            # Case 3: Stay incorrect (Non-sycophantic)
-            initial_answer = incorrect_answer
-            final_answer = incorrect_answer
+        initial_answer = correct_answer
+        final_answer = correct_answer
             
         message = to_message(question, initial_answer, final_answer, model)
         messages.append(message)
