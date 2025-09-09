@@ -7,17 +7,17 @@ from datasets import load_dataset
 from tqdm.auto import tqdm
 import importlib
 import utils
-from utils import generate_and_decode_new_tokens, to_request, create_anthropic_batch_job
+from utils import generate_and_decode_new_tokens, to_request
 
-def get_probe_vectors(chosen_layers, model_id, scale, num_layers, hidden_dim, use_random_direction=None):
-    target_layers = [int(layer) for layer in chosen_layers]
-
+def get_probe_vectors(chosen_layer, model_id, scale, num_layers, hidden_dim, use_random_direction=None):
+    target_layers = [int(layer) for layer in chosen_layer]
     probes = {key: torch.zeros(hidden_dim) for key in range(num_layers)}
     for layer in target_layers:
         current_probe = torch.load(f'linear_probe/trained_probe/{model_id}/linear_probe_mlp_{layer}.pth')['linear.weight'].squeeze()
         if use_random_direction:
             current_probe = torch.normal(mean=current_probe.mean(), std=current_probe.std(), size=current_probe.shape)
-        current_std = torch.std(current_probe)
+        current_probe = current_probe / torch.norm(current_probe, p=2)
+        current_std = torch.load(f'linear_probe/trained_probe/{model_id}/std_mlp_{layer}.pt')
         current_probe = scale * current_std * current_probe
         probes[layer] = current_probe
     return probes
@@ -25,17 +25,14 @@ def get_probe_vectors(chosen_layers, model_id, scale, num_layers, hidden_dim, us
 def main():
     parser = argparse.ArgumentParser(description='Inference script with arguments')
     parser.add_argument('--model_id', type=str, default='gemma-3', help='Model ID to use')
-    parser.add_argument('--chosen_layer', type=int, default=1, help='Number of top heads to use')
+    parser.add_argument('--chosen_layer', type=int, default=1, help='Layer to intervene')
     parser.add_argument('--scale', type=float, default=-20, help='Scale factor for probe vectors')
-    parser.add_argument('--api_key', type=str, default="", 
-                        help='API key for Anthropic')
     
     args = parser.parse_args()
     
     model_id = args.model_id
     chosen_layer = args.chosen_layer
     scale = args.scale
-    api_key = args.api_key
     
     print(f"Loading model: {model_id}")
     model, processor = load_model(model_id)
@@ -58,13 +55,13 @@ def main():
         HEAD_DIM = model.config.head_dim
     
     print(f"Getting {chosen_layer} probes")
-    chosen_layers = [chosen_layer]
-    print(f"Top layers selected: {chosen_layers}")
+    chosen_layer = [chosen_layer]
+    print(f"Top layers selected: {chosen_layer}")
     
     print(f"Creating probe vectors with scale {scale}")
-    linear_probes = get_probe_vectors(chosen_layers, model_id, scale=scale, 
+    linear_probes = get_probe_vectors(chosen_layer, model_id, scale=scale, 
                                       num_layers=NUM_LAYERS, hidden_dim=HIDDEN_DIM,
-                                      use_random_direction=False
+                                    #   use_random_direction=True
                                       )
     
     print("Setting up intervention components")
@@ -101,59 +98,7 @@ def main():
 
     print("saving model responses")
     import pandas as pd
-    pd.DataFrame({'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/answers_{chosen_layer}_{scale}_mlp.csv")
-
-    
-    print("Creating batch job for initial answers")
-    requests = [to_request(f'truthfulqa_{model_id}_initial_iti_mlp-{i}', q, a, p) 
-                   for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, initial_answer))]
-    initial_answer_path =  f"batch_job/initial_{chosen_layer}_mlp.jsonl"
-    import json
-    with open(initial_answer_path, 'w') as f:
-        for item in requests:
-            json_line = json.dumps(item)
-            f.write(json_line + '\n')
-    from openai import OpenAI
-    client = OpenAI(api_key=args.api_key)
-    batch_input_file = client.files.create(
-        file=open(initial_answer_path, "rb"),
-        purpose="batch"
-    )
-    batch_input_file_id = batch_input_file.id
-    client.batches.create(
-        input_file_id=batch_input_file_id,
-        endpoint="/v1/chat/completions",
-        completion_window="24h",
-        metadata={
-            "description": f"truthfulqa-{model_id}_initial_iti_{chosen_layer}_{scale}_mlp"
-        }
-    )
-
-    print("Creating batch job for final answers")
-    if 'gemma' in str(type(model)).lower():
-        requests = [to_request(f'truthfulqa_{model_id}_final_iti_mlp-{i}', q, a, p) 
-                   for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, final_answer))]
-    else:
-        requests = [to_request(f'truthfulqa_{model_id}_final_iti_mlp-{i}', q, a, p) 
-                   for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, final_answer))]
-    final_answer_path =  f"batch_job/final_{chosen_layer}_mlp.jsonl"
-    with open(final_answer_path, 'w') as f:
-        for item in requests:
-            json_line = json.dumps(item)
-            f.write(json_line + '\n')
-    batch_input_file = client.files.create(
-        file=open(final_answer_path, "rb"),
-        purpose="batch"
-    )
-    batch_input_file_id = batch_input_file.id
-    client.batches.create(
-        input_file_id=batch_input_file_id,
-        endpoint="/v1/chat/completions",
-        completion_window="24h",
-        metadata={
-            "description": f"truthfulqa-{model_id}_final_iti_{chosen_layer}_{scale}_mlp"
-        }
-    )
+    pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/{model_id}_answers_L{chosen_layer}_{scale}_mlp.csv")
 
 if __name__ == "__main__":
     main()

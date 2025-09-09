@@ -11,15 +11,15 @@ from utils import generate_and_decode_new_tokens, to_request
 
 def get_probe_vectors(chosen_layer, model_id, scale, num_layers, hidden_dim, use_random_direction=None):
     target_layers = [int(layer) for layer in chosen_layer]
-
     probes = {key: torch.zeros(hidden_dim) for key in range(num_layers)}
     for layer in target_layers:
-        current_probe = torch.load(f'linear_probe/trained_probe/gemma-3-4b-it/linear_probe_residual_{layer}.pth')['linear.weight'].squeeze()
+        current_probe = torch.load(f'linear_probe/trained_probe/{model_id}/linear_probe_residual_{layer}.pth')['linear.weight'].squeeze()
         if use_random_direction:
             current_probe = torch.normal(mean=current_probe.mean(), std=current_probe.std(), size=current_probe.shape)
-        current_std = torch.std(current_probe)
         current_probe = current_probe / torch.norm(current_probe, p=2)
-        current_probe = scale * current_std * current_probe
+        current_std = torch.load(f'linear_probe/trained_probe/{model_id}/std_residual_{layer}.pt')
+        current_probe = scale * current_std * current_probe 
+
         probes[layer] = current_probe
     return probes
 
@@ -40,7 +40,7 @@ def main():
     model.eval()
     
     print(f"Loading accuracies for model: {model_id}")
-    accuracies = pickle.load(open(f'linear_probe/trained_probe/gemma-3-4b-it/accuracies_dict_residual.pkl', 'rb'))
+    accuracies = pickle.load(open(f'linear_probe/trained_probe/{model_id}/accuracies_dict_residual.pkl', 'rb'))
     config = model.config
     
     # Set model parameters based on model type
@@ -72,7 +72,7 @@ def main():
                 "intervention": pv.AdditionIntervention(
                     source_representation=linear_probes[i].to("cuda")
                 )
-                # "intervention": pv.ZeroIntervention
+                # "intervention": pv.ZeroIntervention()
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     else:
         target_components = [{
@@ -80,7 +80,6 @@ def main():
                 "intervention": pv.AdditionIntervention(
                     source_representation=linear_probes[i].to("cuda")
                 )
-                # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     
     print("Creating interventable model")

@@ -1,4 +1,4 @@
-from utils import load_model
+from utils import load_model, load_test_data
 import pickle
 import torch
 import pyvene as pv
@@ -6,7 +6,6 @@ import argparse
 from datasets import load_dataset
 from tqdm.auto import tqdm
 import importlib
-import utils
 from utils import generate_and_decode_new_tokens, to_request, create_anthropic_batch_job
 
 def get_top_k_keys(accuracy_dict, k=16):
@@ -45,22 +44,17 @@ def get_probe_vectors(top_k_heads, model_id, scale=5, num_layers=None, head_dim=
     probes = {key: torch.zeros(head_dim*num_heads) for key in range(num_layers)}
     for layer in target_heads:
         for head in target_heads[layer]:
-            if direction_type == 'probe_weight':
-                current_probe = torch.load(f'linear_probe/trained_probe/{model_id}/linear_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
-            elif direction_type == 'mean_mass':
-                current_probe = torch.load(f'linear_probe/mean_direction/{model_id}/linear_probe_{layer}_{head}.pth').squeeze()
-            if use_random_direction:
-                current_probe = torch.normal(mean=current_probe.mean(), std=current_probe.std(), size=current_probe.shape)
+            current_probe = torch.load(f'linear_probe/trained_probe/{model_id}/linear_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
             current_probe = current_probe / torch.norm(current_probe, p=2)
-            current_std = torch.std(current_probe)
+            current_std = torch.load(f'linear_probe/trained_probe/{model_id}/std_mha_{layer}_{head}.pt')
             current_probe = scale * current_std * current_probe
-            # current_probe = scale * current_probe
             probes[layer][head*head_dim:head_dim*(head+1)] = current_probe
     return probes
 
 def main():
     parser = argparse.ArgumentParser(description='Inference script with arguments')
     parser.add_argument('--model_id', type=str, default='gemma-3', help='Model ID to use')
+    parser.add_argument('--dataset_id', type=str, default='truthfulqa', help='Dataset ID to use')
     parser.add_argument('--k_heads', type=int, default=16, help='Number of top heads to use')
     parser.add_argument('--scale', type=float, default=-20, help='Scale factor for probe vectors')
     parser.add_argument('--direction_type', type=str, default='probe_weight', help='Direction type for probe vectors')
@@ -122,10 +116,11 @@ def main():
     print("Creating interventable model")
     pv_model = pv.IntervenableModel(target_components, model=model)
     
-    print("Loading TruthfulQA dataset")
-    ds = load_dataset("truthfulqa/truthful_qa", "generation")
-    questions_test = ds['validation']['question'][int(0.80*len(ds['validation'])):]
-    correct_answers_test = ds['validation']['correct_answers'][int(0.80*len(ds['validation'])):]
+    print(f"Loading {args.dataset_id} dataset")
+    questions_test, correct_answers_test = load_test_data(args.dataset_id)
+    # ds = load_dataset("truthfulqa/truthful_qa", "generation")
+    # questions_test = ds['validation']['question'][int(0.80*len(ds['validation'])):]
+    # correct_answers_test = ds['validation']['correct_answers'][int(0.80*len(ds['validation'])):]
     
     print("Generating answers for test questions")
     initial_answer = []

@@ -136,3 +136,5 @@ evaluation_jsonl
 *.sh
 *.png
 *.pkl
+
+linear_probe/trained_probe

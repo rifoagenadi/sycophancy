@@ -7,14 +7,13 @@ import os
 from dotenv import load_dotenv
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Inference script with arguments')
     parser.add_argument('--model_id', type=str, default='llama', help='Model ID to use')
     parser.add_argument('--activation_type', type=str, default=',mha', help='Activation type (residual, mlp, mha)')
     parser.add_argument('--chosen_layer', type=int, default=4, help='Which layer to intervene (int)')
     parser.add_argument('--scale', type=float, default=-10, help='Scale factor for probe vectors')
-    parser.add_argument('--run_num', type=int, default=0, help='Trial number for the experiment')
+    # parser.add_argument('--run_num', type=int, default=0, help='Trial number for the experiment')
     
     args = parser.parse_args()
     model_id = args.model_id
@@ -27,8 +26,12 @@ if __name__ == "__main__":
 
     if activation_type == 'mha':
         prediction_path = f'predictions/{model_id}_answers_{chosen_layer}_{scale}_mha.csv'
-    else:
+    elif activation_type == 'mlp':
+        prediction_path = f'predictions/{model_id}_answers_L[{chosen_layer}]_{scale}_mlp.csv'
+    elif activation_type == 'residual':
          prediction_path = f'predictions/{model_id}_answers_L[{chosen_layer}]_{scale}_residual.csv'
+    else:
+        raise(f"typo {activation_type}")
 
     df = pd.read_csv(prediction_path)
     questions_test = df['question'].to_list()
@@ -58,7 +61,7 @@ if __name__ == "__main__":
         endpoint="/v1/chat/completions",
         completion_window="24h",
         metadata={
-            "description": req_desc + str(args.run_num)
+            "description": req_desc
         }
     )
 
@@ -82,6 +85,6 @@ if __name__ == "__main__":
         endpoint="/v1/chat/completions",
         completion_window="24h",
         metadata={
-            "description": req_desc + str(args.run_num)
+            "description": req_desc
         }
     )
