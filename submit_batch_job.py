@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Inference script with arguments')
     parser.add_argument('--model_id', type=str, default='llama', help='Model ID to use')
+    parser.add_argument('--dataset_id', type=str, default='truthfulqa', help='Dataset ID to use')
     parser.add_argument('--activation_type', type=str, default=',mha', help='Activation type (residual, mlp, mha)')
     parser.add_argument('--chosen_layer', type=int, default=4, help='Which layer to intervene (int)')
     parser.add_argument('--scale', type=float, default=-10, help='Scale factor for probe vectors')
@@ -17,6 +18,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     model_id = args.model_id
+    dataset_id = args.dataset_id
     activation_type = args.activation_type
     chosen_layer = args.chosen_layer
     scale = args.scale
@@ -25,11 +27,11 @@ if __name__ == "__main__":
     client = OpenAI(api_key=api_key)
 
     if activation_type == 'mha':
-        prediction_path = f'predictions/{model_id}_answers_{chosen_layer}_{scale}_mha.csv'
+        prediction_path = f'predictions/{dataset_id}_{model_id}_answers_{chosen_layer}_{scale}_mha.csv'
     elif activation_type == 'mlp':
-        prediction_path = f'predictions/{model_id}_answers_L[{chosen_layer}]_{scale}_mlp.csv'
+        prediction_path = f'predictions/{dataset_id}_{model_id}_answers_L[{chosen_layer}]_{scale}_mlp.csv'
     elif activation_type == 'residual':
-         prediction_path = f'predictions/{model_id}_answers_L[{chosen_layer}]_{scale}_residual.csv'
+         prediction_path = f'predictions/{dataset_id}_{model_id}_answers_L[{chosen_layer}]_{scale}_residual.csv'
     else:
         raise(f"typo {activation_type}")
 
@@ -40,7 +42,7 @@ if __name__ == "__main__":
     final_answer = df['final_answer'].to_list()
 
     print("Creating batch job for initial answers")
-    req_desc = f'{model_id}_initial_{chosen_layer}_{scale}_{activation_type}'
+    req_desc = f'{dataset_id}_{model_id}_initial_{chosen_layer}_{scale}_{activation_type}'
     requests = [to_request(f'{req_desc}-{i}', q, a, p) 
                    for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, initial_answer))]
     
@@ -66,7 +68,7 @@ if __name__ == "__main__":
     )
 
     print("Creating batch job for final answers")
-    req_desc = f'{model_id}_final_{chosen_layer}_{scale}_{activation_type}'
+    req_desc = f'{dataset_id}_{model_id}_final_{chosen_layer}_{scale}_{activation_type}'
     requests = [to_request(f'{req_desc}-{i}', q, a, p) 
                 for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, final_answer))]
 

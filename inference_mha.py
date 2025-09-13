@@ -30,7 +30,7 @@ def get_top_k_keys(accuracy_dict, k=16):
     # Return the top k items (or all if k is larger than dictionary size)
     return [x[0] for x in sorted_items[:min(k, len(sorted_items))]]
 
-def get_probe_vectors(top_k_heads, model_id, scale=5, num_layers=None, head_dim=None, num_heads=None, use_random_direction=None, direction_type='probe_weight'):
+def get_probe_vectors(top_k_heads, model_id, scale=-5, num_layers=None, head_dim=None, num_heads=None, use_random_direction=None, direction_type='probe_weight'):
     target_heads = {}
     for head_string in top_k_heads:
         layer, head = head_string.split('_')
@@ -56,7 +56,7 @@ def main():
     parser.add_argument('--model_id', type=str, default='gemma-3', help='Model ID to use')
     parser.add_argument('--dataset_id', type=str, default='truthfulqa', help='Dataset ID to use')
     parser.add_argument('--k_heads', type=int, default=16, help='Number of top heads to use')
-    parser.add_argument('--scale', type=float, default=-20, help='Scale factor for probe vectors')
+    parser.add_argument('--scale', type=float, default=-5, help='Scale factor for probe vectors')
     parser.add_argument('--direction_type', type=str, default='probe_weight', help='Direction type for probe vectors')
     
     args = parser.parse_args()
@@ -102,7 +102,6 @@ def main():
                 "intervention": pv.AdditionIntervention(
                     source_representation=linear_probes[i].to("cuda")
                 )
-                # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     else:
         target_components = [{
@@ -110,7 +109,6 @@ def main():
                 "intervention": pv.AdditionIntervention(
                     source_representation=linear_probes[i].to("cuda")
                 )
-                # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     
     print("Creating interventable model")
@@ -118,9 +116,6 @@ def main():
     
     print(f"Loading {args.dataset_id} dataset")
     questions_test, correct_answers_test = load_test_data(args.dataset_id)
-    # ds = load_dataset("truthfulqa/truthful_qa", "generation")
-    # questions_test = ds['validation']['question'][int(0.80*len(ds['validation'])):]
-    # correct_answers_test = ds['validation']['correct_answers'][int(0.80*len(ds['validation'])):]
     
     print("Generating answers for test questions")
     initial_answer = []
@@ -132,7 +127,7 @@ def main():
     
     print("saving model responses")
     import pandas as pd
-    pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/{model_id}_answers_{k_heads}_{scale}_mha.csv")
+    pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/{args.dataset_id}_{model_id}_answers_{k_heads}_{scale}_mha.csv")
 
 if __name__ == "__main__":
     main()

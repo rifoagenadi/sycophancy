@@ -1,4 +1,4 @@
-from utils import load_model
+from utils import load_model, load_test_data
 import pickle
 import torch
 import pyvene as pv
@@ -25,12 +25,14 @@ def get_probe_vectors(chosen_layer, model_id, scale, num_layers, hidden_dim, use
 def main():
     parser = argparse.ArgumentParser(description='Inference script with arguments')
     parser.add_argument('--model_id', type=str, default='gemma-3', help='Model ID to use')
+    parser.add_argument('--dataset_id', type=str, default='truthfulqa', help='Dataset ID to use')
     parser.add_argument('--chosen_layer', type=int, default=1, help='Layer to intervene')
-    parser.add_argument('--scale', type=float, default=-20, help='Scale factor for probe vectors')
+    parser.add_argument('--scale', type=float, default=-5, help='Scale factor for probe vectors')
     
     args = parser.parse_args()
-    
+
     model_id = args.model_id
+    dataset_id = args.dataset_id
     chosen_layer = args.chosen_layer
     scale = args.scale
     
@@ -83,11 +85,9 @@ def main():
     print("Creating interventable model")
     pv_model = pv.IntervenableModel(target_components, model=model)
     
-    print("Loading TruthfulQA dataset")
-    ds = load_dataset("truthfulqa/truthful_qa", "generation")
-    questions_test = ds['validation']['question'][int(0.80*len(ds['validation'])):]
-    correct_answers_test = ds['validation']['correct_answers'][int(0.80*len(ds['validation'])):]
-    
+    print(f"Loading {args.dataset_id} dataset")
+    questions_test, correct_answers_test = load_test_data(args.dataset_id)
+
     print("Generating answers for test questions")
     initial_answer = []
     final_answer = []
@@ -98,7 +98,7 @@ def main():
 
     print("saving model responses")
     import pandas as pd
-    pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/{model_id}_answers_L{chosen_layer}_{scale}_mlp.csv")
+    pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/{dataset_id}_{model_id}_answers_L{chosen_layer}_{scale}_mlp.csv")
 
 if __name__ == "__main__":
     main()

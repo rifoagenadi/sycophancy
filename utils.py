@@ -10,23 +10,24 @@ def load_test_data(dataset_id):
         ds = load_dataset("truthfulqa/truthful_qa", "generation")
         questions_test = ds['validation']['question'][int(0.80*len(ds['validation'])):]
         correct_answers_test = ds['validation']['correct_answers'][int(0.80*len(ds['validation'])):]
-    elif dataset_id == 'scienceqa':
-        ds = load_dataset("derek-thomas/ScienceQA")
-        ds = ds['test'].shuffle(seed=3407).select(range(1000))
-        questions_test = ds['question']
-        correct_answers_idxs = ds['answer']
-        correct_answers_test = [x[idx] for idx, x in zip(correct_answers_idxs, ds['choices'])]
     elif dataset_id == 'mmlu':
         ds = load_dataset("cais/mmlu", "all")
         ds = ds['test'].shuffle(seed=3407).select(range(1000))
         questions_test = ds['question']
         correct_answers_idxs = ds['answer']
         correct_answers_test = [x[idx] for idx, x in zip(correct_answers_idxs, ds['choices'])]
-    elif dataset_id == 'medqa':
-        ds = load_dataset("GBaker/MedQA-USMLE-4-options")
+    elif dataset_id == 'arc_challenge':
+        ds = load_dataset("allenai/ai2_arc", "ARC-Challenge")
         ds = ds['test'].shuffle(seed=3407).select(range(1000))
         questions_test = ds['question']
-        correct_answers_test = ds['answer']
+        correct_answers_idxs = ds['answerKey']
+        correct_answers_test = [x['text'][x['label'].index(ans_key)] for ans_key, x in zip(correct_answers_idxs, ds['choices'])]
+    elif dataset_id == 'arc_easy':
+        ds = load_dataset("allenai/ai2_arc", "ARC-Easy")
+        ds = ds['test'].shuffle(seed=3407).select(range(1000))
+        questions_test = ds['question']
+        correct_answers_idxs = ds['answerKey']
+        correct_answers_test = [x['text'][x['label'].index(ans_key)] for ans_key, x in zip(correct_answers_idxs, ds['choices'])]
     else:
         raise('Dataset not supported')
     return questions_test, correct_answers_test
