@@ -16,11 +16,13 @@ import torch
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compute and save standard deviation along the learned sycophancy direction.")
     parser.add_argument("--model_id", type=str, required=True, help="'gemma-3' or 'llama-3.2")
-    parser.add_argument("--activation_type", type=str, required=True, choices=['mha', 'mlp', 'residual'], help="Type of activation to extract and train on ('mha', 'mlp', or 'residual').")
+    parser.add_argument("--activation_type", type=str, required=True, choices=['mha', 'mlp', 'residual'], help="Type of activation to extract and trained on ('mha', 'mlp', or 'residual').")
+    parser.add_argument("--direction_type", type=str, required=True, choices=['sycophancy', 'truthful'], help="Type of direction to extract")
 
     args = parser.parse_args()
     model_id = args.model_id
     activation_type = args.activation_type
+    direction_type = args.direction_type
 
     print("Loading model")
     model, processor = load_model(model_id)
@@ -61,29 +63,29 @@ if __name__ == "__main__":
     if activation_type == 'mha':
         for layer in tqdm(range(NUM_LAYER)):
             for head in range(NUM_HEAD):
-                dir = torch.load(f'trained_probe/{model_id}/linear_probe_{layer}_{head}.pth')['linear.weight'][0, :].cpu().to(torch.bfloat16)
+                dir = torch.load(f'trained_probe_{direction_type}/{model_id}/linear_probe_{layer}_{head}.pth')['linear.weight'][0, :].cpu().to(torch.bfloat16)
                 dir = dir/torch.norm(dir)
                 activations = torch.tensor(tuning_activations[:,layer,head,:], dtype=torch.bfloat16).to("cpu")
                 proj_vals = activations @ dir.T
                 proj_val_std = torch.std(proj_vals)
-                torch.save(proj_val_std, f'trained_probe/{model_id}/std_mha_{layer}_{head}.pt')
+                torch.save(proj_val_std, f'trained_probe_{direction_type}/{model_id}/std_mha_{layer}_{head}.pt')
     elif activation_type == 'residual':
         for layer in tqdm(range(NUM_LAYER)):
-            dir = torch.load(f'trained_probe/{model_id}/linear_probe_residual_{layer}.pth')['linear.weight'][0, :].cpu().to(torch.bfloat16)
+            dir = torch.load(f'trained_probe_{direction_type}/{model_id}/linear_probe_residual_{layer}.pth')['linear.weight'][0, :].cpu().to(torch.bfloat16)
             dir = dir/torch.norm(dir)
             activations = torch.tensor(tuning_activations[:,layer,:], dtype=torch.bfloat16).to("cpu")
             proj_vals = activations @ dir.T
             proj_val_std = torch.std(proj_vals)
             print(proj_val_std)
-            torch.save(proj_val_std, f'trained_probe/{model_id}/std_residual_{layer}.pt')
+            torch.save(proj_val_std, f'trained_probe_{direction_type}/{model_id}/std_residual_{layer}.pt')
     elif activation_type == 'mlp':
         for layer in tqdm(range(NUM_LAYER)):
-            dir = torch.load(f'trained_probe/{model_id}/linear_probe_mlp_{layer}.pth')['linear.weight'][0, :].cpu().to(torch.bfloat16)
+            dir = torch.load(f'trained_probe_{direction_type}/{model_id}/linear_probe_mlp_{layer}.pth')['linear.weight'][0, :].cpu().to(torch.bfloat16)
             dir = dir/torch.norm(dir)
             activations = torch.tensor(tuning_activations[:,layer,:], dtype=torch.bfloat16).to("cpu")
             proj_vals = activations @ dir.T
             proj_val_std = torch.std(proj_vals)
             print(proj_val_std)
-            torch.save(proj_val_std, f'trained_probe/{model_id}/std_mlp_{layer}.pt')
+            torch.save(proj_val_std, f'trained_probe_{direction_type}/{model_id}/std_mlp_{layer}.pt')
     else:
         raise(f'Activation type not supported: {activation_type}')

@@ -137,4 +137,7 @@ evaluation_jsonl
 *.png
 *.pkl
 
-linear_probe/trained_probe
+linear_probe/trained_probe_sycophancy
+linear_probe/trained_probe_truthful
+predictions_sycophancy
+predictions_truthful

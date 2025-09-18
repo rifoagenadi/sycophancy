@@ -225,7 +225,7 @@ def main(args):
     # Reload utils if needed (useful during interactive development)
     importlib.reload(linear_probe_data_utils)
     importlib.reload(extract_activation)
-    from linear_probe_data_utils import construct_data
+    from linear_probe_data_utils import construct_data, construct_data_truthful
 
     # Load Model and Processor
     print(f"Loading model: {args.model_id}...")
@@ -263,7 +263,12 @@ def main(args):
     ds_train_split = ds_train_val[:int(0.8*len(ds_train_val))] # 80% for training activation extraction/probe training
     # ds_test_split = ds_train_val[int(0.8*len(ds_train_val)):] # 20% held out? The notebooks used same split for extraction and training
 
-    chats, labels = construct_data(ds_train_split, model=args.model_id.split('-')[0]) # Simple model name
+    if args.direction_type == 'truthful':
+        chats, labels = construct_data_truthful(ds_train_split, model=args.model_id.split('-')[0]) # Simple model name
+    elif args.direction_type == 'sycophancy':
+        chats, labels = construct_data(ds_train_split, model=args.model_id.split('-')[0]) # Simple model name
+    else:
+        raise("Direction/concept not supported")
 
     label_encoder = LabelEncoder()
     labels = label_encoder.fit_transform(labels)
@@ -364,6 +369,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for Adam optimizer.")
     parser.add_argument("--epochs", type=int, default=25, help="Number of epochs for probe training.")
     parser.add_argument("--output_dir", type=str, default="trained_probe", help="Directory to save trained probes and results.")
+    parser.add_argument("--direction_type", type=str, default="sycophancy", choices=["sycophancy", "truthful"], help="Direction/concept to steer")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use ('cuda' or 'cpu').")
 
     args = parser.parse_args()

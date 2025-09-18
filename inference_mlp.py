@@ -83,7 +83,7 @@ def main():
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     
     print("Creating interventable model")
-    pv_model = pv.IntervenableModel(target_components, model=model)
+    pv_model = pv.IntervenableModel(target_components, model=model) if scale > 0 else model
     
     print(f"Loading {args.dataset_id} dataset")
     questions_test, correct_answers_test = load_test_data(args.dataset_id)
