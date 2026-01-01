@@ -127,6 +127,7 @@ poetry.lock
 
 # PEP 582; used by e.g. pythonpdm
 __pypackages__
+__pycache__/
 
 batch_job
 attention_vis

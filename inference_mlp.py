@@ -13,11 +13,11 @@ def get_probe_vectors(chosen_layer, model_id, scale, num_layers, hidden_dim, use
     target_layers = [int(layer) for layer in chosen_layer]
     probes = {key: torch.zeros(hidden_dim) for key in range(num_layers)}
     for layer in target_layers:
-        current_probe = torch.load(f'linear_probe/trained_probe/{model_id}/linear_probe_mlp_{layer}.pth')['linear.weight'].squeeze()
+        current_probe = torch.load(f'linear_probe/trained_probe_sycophancy/{model_id}/linear_probe_mlp_{layer}.pth')['linear.weight'].squeeze()
         if use_random_direction:
             current_probe = torch.normal(mean=current_probe.mean(), std=current_probe.std(), size=current_probe.shape)
         current_probe = current_probe / torch.norm(current_probe, p=2)
-        current_std = torch.load(f'linear_probe/trained_probe/{model_id}/std_mlp_{layer}.pt')
+        current_std = torch.load(f'linear_probe/trained_probe_sycophancy/{model_id}/std_mlp_{layer}.pt')
         current_probe = scale * current_std * current_probe
         probes[layer] = current_probe
     return probes
@@ -28,6 +28,8 @@ def main():
     parser.add_argument('--dataset_id', type=str, default='truthfulqa', help='Dataset ID to use')
     parser.add_argument('--chosen_layer', type=int, default=1, help='Layer to intervene')
     parser.add_argument('--scale', type=float, default=-5, help='Scale factor for probe vectors')
+    parser.add_argument('--use_random_direction', action='store_true', help='If set, use a random direction instead of a fixed probe vector')
+
     
     args = parser.parse_args()
 
@@ -41,7 +43,7 @@ def main():
     model.eval()
     
     print(f"Loading accuracies for model: {model_id}")
-    accuracies = pickle.load(open(f'linear_probe/trained_probe/{model_id}/accuracies_dict_mlp.pkl', 'rb'))
+    accuracies = pickle.load(open(f'linear_probe/trained_probe_sycophancy/{model_id}/accuracies_dict_mlp.pkl', 'rb'))
     config = model.config
     
     # Set model parameters based on model type
@@ -63,7 +65,7 @@ def main():
     print(f"Creating probe vectors with scale {scale}")
     linear_probes = get_probe_vectors(chosen_layer, model_id, scale=scale, 
                                       num_layers=NUM_LAYERS, hidden_dim=HIDDEN_DIM,
-                                    #   use_random_direction=True
+                                      use_random_direction=args.use_random_direction
                                       )
     
     print("Setting up intervention components")
@@ -98,7 +100,7 @@ def main():
 
     print("saving model responses")
     import pandas as pd
-    pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions/{dataset_id}_{model_id}_answers_L{chosen_layer}_{scale}_mlp.csv")
+    pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions_sycophancy/{dataset_id}_{model_id}_answers_L{chosen_layer}_{scale}_mlp.csv")
 
 if __name__ == "__main__":
     main()

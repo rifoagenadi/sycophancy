@@ -126,7 +126,6 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
                 else:
                     raise ValueError("Invalid activation_type specified")
 
-
                 outputs = linear_probe(representations)
                 predicted = torch.sigmoid(outputs).round()
                 total += labels.size(0)

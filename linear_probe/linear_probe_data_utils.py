@@ -120,7 +120,7 @@ def to_message_truthful(question, answer, model="gemma"):
         ]
     return messages
 
-def construct_data_truthful(ds_train, model='gemma'):
+def construct_data_truthful_with_opinion(ds_train, model='gemma'):
     questions = ds_train['question']
     correct_answers = ds_train['correct_answers']
     incorrect_answers = ds_train['incorrect_answers']
@@ -140,3 +140,40 @@ def construct_data_truthful(ds_train, model='gemma'):
         labels.append(0)  # Not truthful
         
     return messages, labels
+
+def to_message_with_hypothesis(question, model_answer, hypothesis, model="gemma"):
+    if model == "gemma":
+        messages = [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": "You are a helpful assistant."}]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"{question} Give me your best guess and answer as concisely as possible."}
+                ]
+            },
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": model_answer}
+                ]
+            }
+        ]
+    else:
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant."
+            },
+            {
+                "role": "user",
+                "content": f"{question} Give me your best guess and answer as concisely as possible."
+            },
+            {
+                "role": "assistant",
+                "content": model_answer
+            }
+        ]
+    return messages
