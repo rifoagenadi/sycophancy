@@ -29,7 +29,7 @@ import extract_activation # Needs reload if changed during session
 from linear_probe import LinearProbe
 
 # --- Dataset Class ---
-class MyDataset(Dataset):
+class QADataset(Dataset):
     def __init__(self, data, labels):
         self.data = data
         self.labels = labels
@@ -224,10 +224,11 @@ def main(args):
     # Reload utils if needed (useful during interactive development)
     importlib.reload(linear_probe_data_utils)
     importlib.reload(extract_activation)
-    from linear_probe_data_utils import construct_data, construct_data_truthful
+    from linear_probe_data_utils import construct_data
 
     # Load Model and Processor
     print(f"Loading model: {args.model_id}...")
+    output_dir = f"trained_probes_{args.direction_type}"
     model, processor = load_model(args.model_id)
     model.eval()
     model.to(args.device)
@@ -258,14 +259,13 @@ def main(args):
     # Load and Prepare Data
     print("Loading and preparing TruthfulQA data...")
     ds = load_dataset("truthfulqa/truthful_qa", "generation")
-    ds_train_val = ds['validation'] # Use the full validation set for train/val split
-    ds_train_split = ds_train_val[:int(0.8*len(ds_train_val))] # 80% for training activation extraction/probe training
-    # ds_test_split = ds_train_val[int(0.8*len(ds_train_val)):] # 20% held out? The notebooks used same split for extraction and training
+    split_ds = ds["validation"].train_test_split(test_size=0.2, seed=3407)
+    ds_train = split_ds["train"]
 
     if args.direction_type == 'truthful':
-        chats, labels = construct_data_truthful(ds_train_split, model=args.model_id.split('-')[0]) # Simple model name
+        chats, labels = construct_data(ds_train, model=args.model_id.split('-')[0]) 
     elif args.direction_type == 'sycophancy':
-        chats, labels = construct_data(ds_train_split, model=args.model_id.split('-')[0]) # Simple model name
+        chats, labels = construct_data(ds_train, model=args.model_id.split('-')[0])
     else:
         raise("Direction/concept not supported")
 
@@ -282,7 +282,7 @@ def main(args):
 
     # Split data for probe training
     print("Splitting data for probe training...")
-    train_tok, val_tok, train_labels, val_labels = train_test_split(
+    train_tok, val_tok, train_labels, val_labels = train_test_split( # split again since we need validation for probe training
         tokenized_data, numerical_labels, test_size=0.2, 
         random_state=3407
     )
@@ -300,17 +300,17 @@ def main(args):
 
     train_activation_list = []
     for datum in tqdm(train_tok, total=len(train_tok), desc="Extracting Train Activations"):
-        act_tensor = extract_fn(model, processor, datum.to(args.device)) # Move datum to device
+        act_tensor = extract_fn(model, processor, datum)
         train_activation_list.append(act_tensor.cpu()) # Move back to CPU for storage
 
     val_activation_list = []
     for datum in tqdm(val_tok, total=len(val_tok), desc="Extracting Val Activations"):
-        act_tensor = extract_fn(model, processor, datum.to(args.device)) # Move datum to device
+        act_tensor = extract_fn(model, processor, datum)
         val_activation_list.append(act_tensor.cpu()) # Move back to CPU for storage
 
     # Create Datasets for Probe Training
-    train_dataset = MyDataset(train_activation_list, train_labels)
-    val_dataset = MyDataset(val_activation_list, val_labels)
+    train_dataset = QADataset(train_activation_list, train_labels)
+    val_dataset = QADataset(val_activation_list, val_labels)
 
     # Train Probes
     print("Starting probe training...")
@@ -329,7 +329,7 @@ def main(args):
                 current_acc = train_probe(model, processor, train_dataset, val_dataset,
                                           args.batch_size, args.lr, args.epochs, args.device,
                                           target_component, args.activation_type, probe_input_dim,
-                                          args.model_id, args.output_dir, HIDDEN_DIM, HEAD_DIM)
+                                          args.model_id, output_dir, HIDDEN_DIM, HEAD_DIM)
                 accuracies[target_component] = current_acc
     elif args.activation_type == 'mlp' or args.activation_type == 'residual':
         for layer in range(NUM_LAYERS):
@@ -337,13 +337,13 @@ def main(args):
             current_acc = train_probe(model, processor, train_dataset, val_dataset,
                                       args.batch_size, args.lr, args.epochs, args.device,
                                       target_component, args.activation_type, probe_input_dim,
-                                      args.model_id, args.output_dir, HIDDEN_DIM, HEAD_DIM)
+                                      args.model_id, output_dir, HIDDEN_DIM, HEAD_DIM)
             accuracies[target_component] = current_acc
     else:
         raise ValueError("Invalid activation_type specified")
 
     # Save Accuracies
-    output_subdir = os.path.join(args.output_dir, args.model_id.split('/')[-1])
+    output_subdir = os.path.join(output_dir, args.model_id.split('/')[-1])
     os.makedirs(output_subdir, exist_ok=True)
     acc_filename = f"accuracies_dict_{args.activation_type}.pkl"
     acc_path = os.path.join(output_subdir, acc_filename)
@@ -353,9 +353,9 @@ def main(args):
 
     # Plot Results
     if args.activation_type == 'mha':
-        plot_mha_heatmap(accuracies, args.model_id, NUM_LAYERS, NUM_HEADS, args.output_dir)
+        plot_mha_heatmap(accuracies, args.model_id, NUM_LAYERS, NUM_HEADS, output_dir)
     elif args.activation_type == 'mlp' or args.activation_type == 'residual':
-        plot_layer_line(accuracies, args.model_id, NUM_LAYERS, args.output_dir, activation_type=args.activation_type)
+        plot_layer_line(accuracies, args.model_id, NUM_LAYERS, output_dir, activation_type=args.activation_type)
 
     print("Training complete.")
 
@@ -367,9 +367,8 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=25, help="Batch size for probe training.")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for Adam optimizer.")
     parser.add_argument("--epochs", type=int, default=25, help="Number of epochs for probe training.")
-    parser.add_argument("--output_dir", type=str, default="trained_probe", help="Directory to save trained probes and results.")
     parser.add_argument("--direction_type", type=str, default="sycophancy", choices=["sycophancy", "truthful"], help="Direction/concept to steer")
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use ('cuda' or 'cpu').")
+    parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu", help="Device to use ('cuda' or 'cpu').")
 
     args = parser.parse_args()
 

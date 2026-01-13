@@ -34,13 +34,13 @@ def load_test_data(dataset_id):
 
 def load_model(model_id):
     if 'gemma-3' == model_id:
-        model = Gemma3ForConditionalGeneration.from_pretrained("google/gemma-3-4b-it", device_map="auto")
+        model = Gemma3ForConditionalGeneration.from_pretrained("google/gemma-3-4b-it", device_map="cuda:0")
         processor = AutoProcessor.from_pretrained("google/gemma-3-4b-it")
     elif 'qwen-3' == model_id:
-        model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-4B-Instruct-2507", device_map='auto')
+        model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-4B-Instruct-2507", device_map='cuda:0')
         processor = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
     elif 'llama-3.2' == model_id:
-        model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-3B-Instruct", device_map='auto')
+        model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-3B-Instruct", device_map='cuda:0')
         processor = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B-Instruct")
     else:
         raise('Model ID Not supported, fail to load')
@@ -199,15 +199,6 @@ def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_t
 
     return res_1, res_2
 
-import anthropic
-
-def create_anthropic_batch_job(requests, api_key=os.environ.get("ANTHROPIC_API_KEY")):
-    client = anthropic.Anthropic(api_key=api_key)
-
-    message_batch = client.beta.messages.batches.create(
-        requests=requests
-    )
-    print(message_batch)
 
 import jsonlines
 def read_jsonlines(file_path):

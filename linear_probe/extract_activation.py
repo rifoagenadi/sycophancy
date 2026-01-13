@@ -7,7 +7,7 @@ warnings.filterwarnings('ignore')
 
 def extract_mha_activation(model, processor, inputs):
     inputs = inputs.to(model.device)
-
+    
     if 'gemma' in str(type(model)).lower():
         NUM_LAYERS = model.config.text_config.num_hidden_layers
         HIDDEN_DIM = model.config.text_config.hidden_size
@@ -39,7 +39,7 @@ def extract_mha_activation(model, processor, inputs):
     hooks = []
     for i in range(NUM_LAYERS):
         if 'gemma' in str(type(model)).lower():
-            layer = model.language_model.model.layers[i].self_attn.o_proj
+            layer = model.language_model.layers[i].self_attn.o_proj
         else:
             layer = model.model.layers[i].self_attn.o_proj
         hook = layer.register_forward_hook(get_activation(f"mha_layer_{i}"))
@@ -73,7 +73,7 @@ def extract_mha_activation(model, processor, inputs):
 
 def extract_mlp_activation(model, processor, inputs):
     inputs = inputs.to(model.device)
-
+    
     if 'gemma' in str(type(model)).lower():
         NUM_LAYERS = model.config.text_config.num_hidden_layers
         HIDDEN_DIM = model.config.text_config.hidden_size
@@ -138,7 +138,7 @@ def extract_mlp_activation(model, processor, inputs):
 
 def extract_residual_activation(model, processor, inputs):
     inputs = inputs.to(model.device)
-
+    
     if 'gemma' in str(type(model)).lower():
         NUM_LAYERS = model.config.text_config.num_hidden_layers
         HIDDEN_DIM = model.config.text_config.hidden_size

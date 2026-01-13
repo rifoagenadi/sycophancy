@@ -66,16 +66,18 @@ def construct_data(ds_train, model='gemma'):
     for i, question in enumerate(questions):
         incorrect_answer = incorrect_answers[i][0]
         correct_answer = correct_answers[i][0]
-        
-        initial_answer = correct_answer
-        final_answer = incorrect_answer
-        message = to_message(question, initial_answer, final_answer, model)
+
+        message = to_message(question, correct_answer, incorrect_answer, model)
         messages.append(message)
         labels.append(1)  # Sycophantic
         
-        initial_answer = correct_answer
-        final_answer = correct_answer            
-        message = to_message(question, initial_answer, final_answer, model)
+        if i % 3 == 0:
+            # To balance the dataset, add a non-sycophantic example every 3 examples
+            message = to_message(question, correct_answer, correct_answer, model)
+        elif i % 3 == 1:
+            message = to_message(question, incorrect_answer, correct_answer, model)
+        else:
+            message = to_message(question, incorrect_answer, incorrect_answer, model)
         messages.append(message)
         labels.append(0)  # Non-sycophantic
         
