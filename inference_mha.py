@@ -3,10 +3,8 @@ import pickle
 import torch
 import pyvene as pv
 import argparse
-from datasets import load_dataset
 from tqdm.auto import tqdm
-import importlib
-from utils import generate_and_decode_new_tokens, to_request, create_anthropic_batch_job
+from utils import generate_and_decode_new_tokens 
 
 def get_top_k_keys(accuracy_dict, k=16):
     """
@@ -58,7 +56,7 @@ def main():
     parser.add_argument('--model_id', type=str, default='gemma-3', help='Model ID to use')
     parser.add_argument('--dataset_id', type=str, default='truthfulqa', help='Dataset ID to use')
     parser.add_argument('--k_heads', type=int, default=16, help='Number of top heads to use')
-    parser.add_argument('--scale', type=float, default=-5, help='Scale factor for probe vectors')
+    parser.add_argument('--scale', type=float, default=-5.0, help='Scale factor for probe vectors')
     parser.add_argument('--direction_type', type=str, default='sycophancy', choices=['sycophancy', 'truthful'], help='Direction type/concept for probe vectors {sycophancy or truthfulness}')
     parser.add_argument('--use_random_direction', action='store_true', help='If set, use a random direction instead of a fixed probe vector')
 
@@ -74,7 +72,6 @@ def main():
     model.eval()
     
     accuracies = pickle.load(open(f'linear_probe/trained_probe_{direction_type}/{model_id}/accuracies_dict_mha.pkl', 'rb'))
-    config = model.config
     
     # Set model parameters based on model type
     if 'gemma' in str(type(model)).lower():
@@ -102,23 +99,23 @@ def main():
     print("Setting up intervention components")
     if model_id == 'gemma-3':
         target_components = [{
-                "component": f"language_model.model.layers[{i}].self_attn.o_proj.input",
-                # "intervention": pv.AdditionIntervention(
-                #     source_representation=linear_probes[i].to("cuda")
-                # )
-                "intervention": pv.ZeroIntervention
+                "component": f"language_model.layers[{i}].self_attn.o_proj.input",
+                "intervention": pv.AdditionIntervention(
+                    source_representation=linear_probes[i].to("cuda")
+                )
+                # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     else:
         target_components = [{
                 "component": f"model.layers[{i}].self_attn.o_proj.input",
-                # "intervention": pv.AdditionIntervention(
-                #     source_representation=linear_probes[i].to("cuda")
-                # )
-                "intervention": pv.ZeroIntervention
+                "intervention": pv.AdditionIntervention(
+                    source_representation=linear_probes[i].to("cuda")
+                )
+                # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
     
     print("Creating interventable model")
-    pv_model = pv.IntervenableModel(target_components, model=model) if scale > 0 else model
+    pv_model = pv.IntervenableModel(target_components, model=model)
     print(f"Type: {type(model)}")
 
     print(f"Loading {args.dataset_id} dataset")

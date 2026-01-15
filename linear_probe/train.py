@@ -148,77 +148,6 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
     print(f"Saved probe to {save_path}")
     return best_val_acc # Return best validation accuracy over epochs
 
-# --- Plotting Functions ---
-def plot_mha_heatmap(accuracies, model_id, num_layers, num_heads, output_dir):
-    """Plots a heatmap for MHA accuracies."""
-    print("Generating MHA heatmap...")
-    rows = []
-    for key, value in accuracies.items():
-        layer, head = map(int, key.split('_'))
-        rows.append({'layer': layer, 'head': head, 'accuracy': value})
-
-    df = pd.DataFrame(rows)
-
-    # Use the actual number of layers/heads from config
-    accuracy_matrix = np.zeros((num_layers, num_heads))
-    accuracy_matrix.fill(np.nan)
-
-    for index, row in df.iterrows():
-        if row['layer'] < num_layers and row['head'] < num_heads:
-            accuracy_matrix[int(row['layer']), int(row['head'])] = row['accuracy']
-
-    plt.figure(figsize=(14, max(10, num_layers // 2))) # Adjust size dynamically
-    cmap = plt.cm.viridis
-    cmap.set_bad('lightgray')
-    heatmap = plt.imshow(accuracy_matrix, cmap=cmap, aspect='auto', vmin=40, vmax=max(90, df['accuracy'].max())) # Adjust color range
-    plt.colorbar(heatmap, label='Accuracy (%)')
-
-    plt.xlabel('Head Index')
-    plt.ylabel('Layer Index')
-    plt.title(f"Accuracy Heatmap by Layer and Head (MHA) - {model_id.split('/')[-1]}", fontsize=16)
-
-    plt.xticks(np.arange(0, num_heads, max(1, num_heads // 16))) # Adjust ticks dynamically
-    plt.yticks(np.arange(0, num_layers, max(1, num_layers // 10)))
-
-    save_path = os.path.join(output_dir, model_id.split('/')[-1], f"{model_id.split('/')[-1]}_accuracy_heatmap_mha.png")
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f"Saved heatmap to {save_path}")
-    plt.close() # Close figure to prevent display in non-interactive environments
-
-def plot_layer_line(accuracies, model_id, num_layers, output_dir, activation_type):
-    """Plots a line graph for MLP accuracies."""
-    print("Generating Layer-wise line plot...")
-    layers = [int(k) for k in accuracies.keys()]
-    accuracies_list = list(accuracies.values())
-
-    # Ensure data is sorted by layer
-    sorted_data = sorted(zip(layers, accuracies_list))
-    layers_sorted, accuracies_sorted = zip(*sorted_data)
-
-
-    plt.figure(figsize=(12, 6))
-    plt.plot(layers_sorted, accuracies_sorted, marker='o', linestyle='-', linewidth=2, markersize=8, color='#3366cc')
-
-    plt.axhline(y=50, color='r', linestyle='--', alpha=0.5, label='Chance level (50%)')
-
-    best_layer_idx = np.argmax(accuracies_sorted)
-    best_layer = layers_sorted[best_layer_idx]
-    best_accuracy = accuracies_sorted[best_layer_idx]
-    plt.scatter(best_layer, best_accuracy, color='red', s=150, zorder=5, label=f'Best layer: {best_layer} ({best_accuracy:.2f}%)')
-
-    plt.xlabel('Layer Number', fontsize=12)
-    plt.ylabel('Validation Accuracy (%)', fontsize=12)
-    plt.title(f"Accuracy by Layer ({activation_type} Output) - {model_id.split('/')[-1]}", fontsize=14)
-    plt.grid(True, alpha=0.3)
-    plt.ylim(min(40, min(accuracies_sorted)-5), max(90, max(accuracies_sorted)+5)) # Dynamic ylim
-    plt.xticks(np.arange(0, num_layers, max(1, num_layers // 14)))
-    plt.legend(loc='lower right')
-    plt.tight_layout()
-    save_path = os.path.join(output_dir, model_id.split('/')[-1], f"{model_id.split('/')[-1]}_accuracy_line_{activation_type}.png")
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f"Saved line plot to {save_path}")
-    plt.close() # Close figure
-
 # --- Main Function ---
 def main(args):
     # Reload utils if needed (useful during interactive development)
@@ -350,12 +279,6 @@ def main(args):
     print(f"Saving accuracies to {acc_path}")
     with open(acc_path, 'wb') as f:
         pickle.dump(accuracies, f)
-
-    # Plot Results
-    if args.activation_type == 'mha':
-        plot_mha_heatmap(accuracies, args.model_id, NUM_LAYERS, NUM_HEADS, output_dir)
-    elif args.activation_type == 'mlp' or args.activation_type == 'residual':
-        plot_layer_line(accuracies, args.model_id, NUM_LAYERS, output_dir, activation_type=args.activation_type)
 
     print("Training complete.")
 

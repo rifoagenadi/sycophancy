@@ -73,27 +73,8 @@ pip install torch transformers datasets scikit-learn matplotlib pandas numpy tqd
 Train probes on a specific model and activation type:
 
 ```bash
-python linear_probe/train.py \
-    --model_id "google/gemma-2-2b-it" \
-    --activation_type mha \
-    --batch_size 25 \
-    --lr 0.001 \
-    --epochs 25 \
-    --output_dir trained_probe \
-    --direction_type sycophancy \
-    --device cuda
+python train.py --model_id gemma-3 --activation_type mha
 ```
-
-#### Arguments
-
-- `--model_id`: HuggingFace model identifier (e.g., "google/gemma-2-2b-it", "meta-llama/Llama-3.2-3B-Instruct")
-- `--activation_type`: Type of activation to analyze (`mha`, `mlp`, or `residual`)
-- `--batch_size`: Batch size for training (default: 25)
-- `--lr`: Learning rate for Adam optimizer (default: 0.001)
-- `--epochs`: Number of training epochs (default: 25)
-- `--output_dir`: Directory to save trained probes and results (default: "trained_probe")
-- `--direction_type`: Concept to detect (`sycophancy` or `truthful`)
-- `--device`: Device to use (`cuda` or `cpu`)
 
 ### Running Inference
 
