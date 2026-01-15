@@ -8,9 +8,6 @@ import argparse
 import pickle
 import importlib
 from tqdm.auto import tqdm
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -23,10 +20,11 @@ from sklearn.model_selection import train_test_split
 from utils import load_model
 
 # Assuming these utils are in the same directory or accessible via PYTHONPATH
-from transformers import AutoProcessor, Gemma3ForConditionalGeneration, AutoModelForCausalLM, AutoTokenizer
-import linear_probe_data_utils # Needs reload if changed during session
-import extract_activation # Needs reload if changed during session
-from linear_probe import LinearProbe
+import probe_data_utils as probe_data_utils
+import extract_activation
+from probe import LinearProbe, NonLinearProbe
+from probe_data_utils import construct_data
+
 
 # --- Dataset Class ---
 class QADataset(Dataset):
@@ -44,7 +42,7 @@ class QADataset(Dataset):
 def train_probe(model, processor, train_dataset, val_dataset, batch_size,
                 learning_rate, num_epochs, device, target_component,
                 activation_type, input_dim, model_id, output_dir,
-                hidden_dim, head_dim): # Pass necessary dims
+                hidden_dim, head_dim, probe_type): # Pass necessary dims
     """
     Trains a linear probe on top of LLM representations.
     """
@@ -68,10 +66,15 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
         return padded_inputs, labels
 
     # Initialize the linear probe
-    linear_probe = LinearProbe(input_dim).to(device)
+    if probe_type == 'linear':
+        probe = LinearProbe(input_dim).to(device)
+    elif probe_type == 'nonlinear':
+        probe = NonLinearProbe(input_dim, hidden_dim=head_dim).to(device)
+    else:
+        raise ValueError("Invalid probe_type specified")
 
     # Define optimizer and loss function
-    optimizer = optim.Adam(linear_probe.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(probe.parameters(), lr=learning_rate)
     criterion = nn.BCEWithLogitsLoss()
 
     # Create DataLoaders
@@ -81,7 +84,7 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
     best_val_acc = 0.0
 
     for epoch in range(num_epochs):
-        linear_probe.train()
+        probe.train()
         total_loss = 0
         for batch in train_loader:
             inputs, labels = batch
@@ -97,7 +100,7 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
             else:
                 raise ValueError("Invalid activation_type specified")
 
-            outputs = linear_probe(representations)
+            outputs = probe(representations)
             loss = criterion(outputs.squeeze(), labels.float())
 
             optimizer.zero_grad()
@@ -109,7 +112,7 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
         print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {avg_train_loss:.4f}")
 
         # Validation
-        linear_probe.eval()
+        probe.eval()
         correct = 0
         total = 0
         with torch.no_grad():
@@ -126,7 +129,7 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
                 else:
                     raise ValueError("Invalid activation_type specified")
 
-                outputs = linear_probe(representations)
+                outputs = probe(representations)
                 predicted = torch.sigmoid(outputs).round()
                 total += labels.size(0)
                 correct += (predicted.squeeze() == labels).sum().item()
@@ -139,25 +142,24 @@ def train_probe(model, processor, train_dataset, val_dataset, batch_size,
     save_dir = os.path.join(output_dir, model_id.split('/')[-1])
     os.makedirs(save_dir, exist_ok=True)
     if activation_type == 'mha':
-        save_path = os.path.join(save_dir, f"linear_probe_{target_component}.pth")
+        save_path = os.path.join(save_dir, f"{probe_type}_probe_{target_component}.pth")
     elif activation_type == 'mlp': # mlp
-         save_path = os.path.join(save_dir, f"linear_probe_mlp_{target_component}.pth")
+         save_path = os.path.join(save_dir, f"{probe_type}_probe_mlp_{target_component}.pth")
     elif activation_type == 'residual': # mlp
-         save_path = os.path.join(save_dir, f"linear_probe_residual_{target_component}.pth")
-    torch.save(linear_probe.state_dict(), save_path)
+         save_path = os.path.join(save_dir, f"{probe_type}_probe_residual_{target_component}.pth")
+    torch.save(probe.state_dict(), save_path)
     print(f"Saved probe to {save_path}")
     return best_val_acc # Return best validation accuracy over epochs
 
 # --- Main Function ---
 def main(args):
     # Reload utils if needed (useful during interactive development)
-    importlib.reload(linear_probe_data_utils)
+    importlib.reload(probe_data_utils)
     importlib.reload(extract_activation)
-    from linear_probe_data_utils import construct_data
 
     # Load Model and Processor
     print(f"Loading model: {args.model_id}...")
-    output_dir = f"trained_probes_{args.direction_type}"
+    output_dir = f"trained_probe_{args.direction_type}"
     model, processor = load_model(args.model_id)
     model.eval()
     model.to(args.device)
@@ -258,7 +260,7 @@ def main(args):
                 current_acc = train_probe(model, processor, train_dataset, val_dataset,
                                           args.batch_size, args.lr, args.epochs, args.device,
                                           target_component, args.activation_type, probe_input_dim,
-                                          args.model_id, output_dir, HIDDEN_DIM, HEAD_DIM)
+                                          args.model_id, output_dir, HIDDEN_DIM, HEAD_DIM, args.probe_type)
                 accuracies[target_component] = current_acc
     elif args.activation_type == 'mlp' or args.activation_type == 'residual':
         for layer in range(NUM_LAYERS):
@@ -266,7 +268,7 @@ def main(args):
             current_acc = train_probe(model, processor, train_dataset, val_dataset,
                                       args.batch_size, args.lr, args.epochs, args.device,
                                       target_component, args.activation_type, probe_input_dim,
-                                      args.model_id, output_dir, HIDDEN_DIM, HEAD_DIM)
+                                      args.model_id, output_dir, HIDDEN_DIM, HEAD_DIM, args.probe_type)
             accuracies[target_component] = current_acc
     else:
         raise ValueError("Invalid activation_type specified")
@@ -274,7 +276,7 @@ def main(args):
     # Save Accuracies
     output_subdir = os.path.join(output_dir, args.model_id.split('/')[-1])
     os.makedirs(output_subdir, exist_ok=True)
-    acc_filename = f"accuracies_dict_{args.activation_type}.pkl"
+    acc_filename = f"{args.probe_type}_accuracies_dict_{args.activation_type}.pkl"
     acc_path = os.path.join(output_subdir, acc_filename)
     print(f"Saving accuracies to {acc_path}")
     with open(acc_path, 'wb') as f:
@@ -285,13 +287,14 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train linear probes on LLM activations.")
-    parser.add_argument("--model_id", type=str, required=True, help="Hugging Face model ID (e.g., 'gemma-3'")
+    parser.add_argument("--model_id", type=str, required=True, help="'gemma-3' or 'llama-3.2'")
     parser.add_argument("--activation_type", type=str, required=True, choices=['mha', 'mlp', 'residual'], help="Type of activation to extract and train on ('mha', 'mlp', or 'residual').")
     parser.add_argument("--batch_size", type=int, default=25, help="Batch size for probe training.")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for Adam optimizer.")
     parser.add_argument("--epochs", type=int, default=25, help="Number of epochs for probe training.")
     parser.add_argument("--direction_type", type=str, default="sycophancy", choices=["sycophancy", "truthful"], help="Direction/concept to steer")
     parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu", help="Device to use ('cuda' or 'cpu').")
+    parser.add_argument("--probe_type", type=str, default="linear", choices=["linear", "nonlinear"], help="Type of probe to use ('linear' or 'nonlinear').")
 
     args = parser.parse_args()
 

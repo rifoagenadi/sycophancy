@@ -127,7 +127,7 @@ poetry.lock
 
 # PEP 582; used by e.g. pythonpdm
 __pypackages__
-__pycache__/
+__pycache__
 
 batch_job
 attention_vis
@@ -137,11 +137,14 @@ evaluation_jsonl
 *.sh
 *.png
 *.pkl
+*.pdf
 
-linear_probe/trained_probe_sycophancy
-linear_probe/trained_probe_truthful
+probe/trained_probe*
 predictions_sycophancy
-predictions_truthful# pixi environments
+predictions_truthful
+
+# pixi environments
 .pixi/*
 !.pixi/config.toml
 __pycache__
+
