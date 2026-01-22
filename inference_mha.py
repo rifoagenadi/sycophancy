@@ -1,3 +1,4 @@
+import os
 from utils import load_model, load_test_data
 import pickle
 import torch
@@ -136,6 +137,9 @@ def main():
     
     print("saving model responses")
     import pandas as pd
+
+    if not os.path.exists(f"predictions_{concept}"):
+        os.makedirs(f"predictions_{concept}")
     if args.use_random_direction:
         pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions_random/{args.dataset_id}_{model_id}_answers_{k_heads}_{scale}_mha_{args.probe_type}.csv")
     else:
