@@ -28,7 +28,7 @@ def get_top_k_keys(accuracy_dict, k=16):
     # Return the top k items (or all if k is larger than dictionary size)
     return [x[0] for x in sorted_items[:min(k, len(sorted_items))]]
 
-def get_probe_vectors(top_k_heads, model_id, scale=-5, num_layers=None, head_dim=None, num_heads=None, use_random_direction=None, direction_type='sycophancy', probe_type='linear'):
+def get_probe_vectors(top_k_heads, model_id, scale=-5, num_layers=None, head_dim=None, num_heads=None, use_random_direction=None, concept='sycophancy', probe_type='linear'):
     target_heads = {}
     for head_string in top_k_heads:
         layer, head = head_string.split('_')
@@ -43,13 +43,13 @@ def get_probe_vectors(top_k_heads, model_id, scale=-5, num_layers=None, head_dim
     for layer in target_heads:
         for head in target_heads[layer]:
             if probe_type == 'nonlinear':
-                current_probe = torch.load(f'probe/trained_probe_{direction_type}/{model_id}/{probe_type}_probe_{layer}_{head}.pth')['net.2.weight'].squeeze()
+                current_probe = torch.load(f'probe/trained_probe_{concept}/{model_id}/{probe_type}_probe_{layer}_{head}.pth')['net.2.weight'].squeeze()
             else:
-                current_probe = torch.load(f'probe/trained_probe_{direction_type}/{model_id}/{probe_type}_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
+                current_probe = torch.load(f'probe/trained_probe_{concept}/{model_id}/{probe_type}_probe_{layer}_{head}.pth')['linear.weight'].squeeze()
             if use_random_direction:
                 current_probe = torch.normal(mean=current_probe.mean(), std=current_probe.std(), size=current_probe.shape)
             current_probe = current_probe / torch.norm(current_probe, p=2)
-            current_std = torch.load(f'probe/trained_probe_{direction_type}/{model_id}/{probe_type}_std_mha_{layer}_{head}.pt')
+            current_std = torch.load(f'probe/trained_probe_{concept}/{model_id}/{probe_type}_std_mha_{layer}_{head}.pt')
             current_probe = scale * current_std * current_probe
             probes[layer][head*head_dim:head_dim*(head+1)] = current_probe
     return probes
@@ -60,7 +60,7 @@ def main():
     parser.add_argument('--dataset_id', type=str, default='truthfulqa', help='Dataset ID to use')
     parser.add_argument('--k_heads', type=int, default=16, help='Number of top heads to use')
     parser.add_argument('--scale', type=float, default=-5.0, help='Scale factor for probe vectors')
-    parser.add_argument('--direction_type', type=str, default='sycophancy', choices=['sycophancy', 'truthful'], help='Direction type/concept for probe vectors {sycophancy or truthfulness}')
+    parser.add_argument('--concept', type=str, default='sycophancy', choices=['sycophancy', 'truthful', 'sycophancy_hypothesis', 'sycophancy_challenged'], help='Direction type/concept for probe vectors {sycophancy or truthfulness}')
     parser.add_argument('--use_random_direction', action='store_true', help='If set, use a random direction instead of a fixed probe vector')
     parser.add_argument('--probe_type', type=str, default='linear', choices=['linear', 'nonlinear'], help='Type of probe to use {linear or nonlinear}')
 
@@ -69,13 +69,13 @@ def main():
     model_id = args.model_id
     k_heads = args.k_heads
     scale = args.scale
-    direction_type = args.direction_type
+    concept = args.concept
     
     print(f"Loading model: {model_id}")
     model, processor = load_model(model_id)
     model.eval()
     
-    accuracies = pickle.load(open(f'probe/trained_probe_{direction_type}/{model_id}/{args.probe_type}_accuracies_dict_mha.pkl', 'rb'))
+    accuracies = pickle.load(open(f'probe/trained_probe_{concept}/{model_id}/{args.probe_type}_accuracies_dict_mha.pkl', 'rb'))
     
     # Set model parameters based on model type
     if 'gemma' in str(type(model)).lower():
@@ -97,7 +97,7 @@ def main():
     linear_probes = get_probe_vectors(top_k_heads, model_id, scale=scale, 
                                         num_layers=NUM_LAYERS, head_dim=HEAD_DIM, num_heads=NUM_HEADS,
                                         use_random_direction=args.use_random_direction,
-                                        direction_type=args.direction_type,
+                                        concept=args.concept,
                                         probe_type=args.probe_type
                                       )
     
@@ -139,7 +139,7 @@ def main():
     if args.use_random_direction:
         pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions_random/{args.dataset_id}_{model_id}_answers_{k_heads}_{scale}_mha_{args.probe_type}.csv")
     else:
-        pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions_{direction_type}/{args.dataset_id}_{model_id}_answers_{k_heads}_{scale}_mha_{args.probe_type}.csv")
+        pd.DataFrame({'question': questions_test, 'correct_answer': correct_answers_test,'initial_answer': initial_answer, 'final_answer': final_answer}).to_csv(f"predictions_{concept}/{args.dataset_id}_{model_id}_answers_{k_heads}_{scale}_mha_{args.probe_type}.csv")
 
 if __name__ == "__main__":
     main()

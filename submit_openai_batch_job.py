@@ -14,13 +14,13 @@ if __name__ == "__main__":
     parser.add_argument('--activation_type', type=str, default=',mha', help='Activation type (residual, mlp, mha)')
     parser.add_argument('--chosen_layer', type=int, default=4, help='Which layer to intervene (int)')
     parser.add_argument('--scale', type=float, default=-10, help='Scale factor for probe vectors')
-    parser.add_argument('--direction_type', type=str, default='sycophancy', choices=['sycophancy', 'truthful', 'random'], help='Direction type/concept for probe vectors {sycophancy or truthfulness}')
+    parser.add_argument('--concept', type=str, default='sycophancy', choices=['sycophancy', 'truthful', 'random'], help='Direction type/concept for probe vectors {sycophancy or truthfulness}')
 
     # parser.add_argument('--run_num', type=int, default=0, help='Trial number for the experiment')
     
     args = parser.parse_args()
     model_id = args.model_id
-    direction_type = args.direction_type
+    concept = args.concept
     dataset_id = args.dataset_id
     activation_type = args.activation_type
     chosen_layer = args.chosen_layer
@@ -30,11 +30,11 @@ if __name__ == "__main__":
     client = OpenAI(api_key=api_key)
 
     if activation_type == 'mha':
-        prediction_path = f'predictions_{direction_type}/{dataset_id}_{model_id}_answers_{chosen_layer}_{scale}_mha.csv'
+        prediction_path = f'predictions_{concept}/{dataset_id}_{model_id}_answers_{chosen_layer}_{scale}_mha.csv'
     elif activation_type == 'mlp':
-        prediction_path = f'predictions_{direction_type}/{dataset_id}_{model_id}_answers_L[{chosen_layer}]_{scale}_mlp.csv'
+        prediction_path = f'predictions_{concept}/{dataset_id}_{model_id}_answers_L[{chosen_layer}]_{scale}_mlp.csv'
     elif activation_type == 'residual':
-         prediction_path = f'predictions_{direction_type}/{dataset_id}_{model_id}_answers_L[{chosen_layer}]_{scale}_residual.csv'
+         prediction_path = f'predictions_{concept}/{dataset_id}_{model_id}_answers_L[{chosen_layer}]_{scale}_residual.csv'
     else:
         raise(f"typo {activation_type}")
 
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     final_answer = df['final_answer'].to_list()
 
     print("Creating batch job for initial answers")
-    req_desc = f'{dataset_id}_{model_id}_initial_{chosen_layer}_{scale}_{activation_type}-{direction_type}'
+    req_desc = f'{dataset_id}_{model_id}_initial_{chosen_layer}_{scale}_{activation_type}-{concept}'
     requests = [to_request(f'{req_desc}-{i}', q, a, p) 
                    for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, initial_answer))]
     
@@ -71,7 +71,7 @@ if __name__ == "__main__":
     )
 
     print("Creating batch job for final answers")
-    req_desc = f'{dataset_id}_{model_id}_final_{chosen_layer}_{scale}_{activation_type}-{direction_type}'
+    req_desc = f'{dataset_id}_{model_id}_final_{chosen_layer}_{scale}_{activation_type}-{concept}'
     requests = [to_request(f'{req_desc}-{i}', q, a, p) 
                 for i, (q, a, p) in enumerate(zip(questions_test, correct_answers_test, final_answer))]
 

@@ -159,7 +159,7 @@ def main(args):
 
     # Load Model and Processor
     print(f"Loading model: {args.model_id}...")
-    output_dir = f"trained_probe_{args.direction_type}"
+    output_dir = f"trained_probe_{args.concept}"
     model, processor = load_model(args.model_id)
     model.eval()
     model.to(args.device)
@@ -193,10 +193,8 @@ def main(args):
     split_ds = ds["validation"].train_test_split(test_size=0.2, seed=3407)
     ds_train = split_ds["train"]
 
-    if args.direction_type == 'truthful':
-        chats, labels = construct_data(ds_train, model=args.model_id.split('-')[0]) 
-    elif args.direction_type == 'sycophancy':
-        chats, labels = construct_data(ds_train, model=args.model_id.split('-')[0])
+    if args.concept in ['truthful', 'sycophancy', 'sycophancy_challenged', 'sycophancy_hypothesis']:
+        chats, labels = construct_data(ds_train, concept=args.concept) 
     else:
         raise("Direction/concept not supported")
 
@@ -292,7 +290,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=25, help="Batch size for probe training.")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate for Adam optimizer.")
     parser.add_argument("--epochs", type=int, default=25, help="Number of epochs for probe training.")
-    parser.add_argument("--direction_type", type=str, default="sycophancy", choices=["sycophancy", "truthful"], help="Direction/concept to steer")
+    parser.add_argument("--concept", type=str, default="sycophancy", choices=["sycophancy", "truthful", "sycophancy_hypothesis", "sycophancy_challenged"], help="Direction/concept to steer")
     parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu", help="Device to use ('cuda' or 'cpu').")
     parser.add_argument("--probe_type", type=str, default="linear", choices=["linear", "nonlinear"], help="Type of probe to use ('linear' or 'nonlinear').")
 
