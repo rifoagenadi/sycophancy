@@ -1,0 +1,17 @@
+[project]
+name = "extension"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "openai",
+    "datasets",
+    "pandas",
+    "pyvene",
+    "tqdm",
+    "torch>=2.10.0",
+    "transformers>=5.3.0",
+    "accelerate>=1.13.0",
+    "nnsight>=0.6.2",
+]

@@ -139,6 +139,9 @@ evaluation_jsonl
 *.pkl
 *.pdf
 *.csv
+*.pt
+*.ttf
+*.json
 
 probe/trained_probe*
 predictions_sycophancy
@@ -148,4 +151,6 @@ predictions_truthful
 .pixi/*
 !.pixi/config.toml
 __pycache__/
+
+*.claude
 
