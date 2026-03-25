@@ -138,6 +138,7 @@ evaluation_jsonl
 *.png
 *.pkl
 *.pdf
+*.csv
 
 probe/trained_probe*
 predictions_sycophancy
@@ -146,5 +147,5 @@ predictions_truthful
 # pixi environments
 .pixi/*
 !.pixi/config.toml
-__pycache__
+__pycache__/
 

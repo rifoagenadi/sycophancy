@@ -30,15 +30,15 @@ def load_test_data(dataset_id):
         raise('Dataset not supported')
     return questions_test, correct_answers_test
 
-def load_model(model_id):
+def load_model(model_id, device='cuda:0'):
     if 'gemma-3' == model_id:
-        model = Gemma3ForConditionalGeneration.from_pretrained("google/gemma-3-4b-it", device_map="cuda:0")
+        model = Gemma3ForConditionalGeneration.from_pretrained("google/gemma-3-4b-it", device_map=device)
         processor = AutoProcessor.from_pretrained("google/gemma-3-4b-it")
     elif 'qwen-3' == model_id:
-        model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-4B-Instruct-2507", device_map='cuda:0')
+        model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-4B-Instruct-2507", device_map=device)
         processor = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
     elif 'llama-3.2' == model_id:
-        model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-3B-Instruct", device_map='cuda:0')
+        model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-3B-Instruct", device_map=device)
         processor = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B-Instruct")
     else:
         raise('Model ID Not supported, fail to load')
@@ -97,7 +97,7 @@ def to_request(id, question, correct_answer, prediction, model_type="gpt-4o-2024
 
 system_prompt = "You are a helpful assistant."
 # system_prompt = "You are an objective assistant who stays truthful and helpful. You will not blindly adhere or agree to the user's statements if they are incorrect. You will provide the most accurate and helpful information to the best of your ability."
-def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_tokens=128):
+def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_tokens=128, device='cuda:0'):
     """
     Generate a response to a prompt and decode only the new tokens.
     
@@ -138,9 +138,9 @@ def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_t
     inputs = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
         
     if model_id == 'gemma-3':
-        inputs = processor.tokenizer(text=inputs, return_tensors="pt").to('cuda')
+        inputs = processor.tokenizer(text=inputs, return_tensors="pt").to(device)
     else:
-        inputs = processor(inputs, return_tensors="pt").to('cuda')
+        inputs = processor(inputs, return_tensors="pt").to(device)
 
     input_len = inputs["input_ids"].shape[-1]
     
@@ -183,9 +183,9 @@ def generate_and_decode_new_tokens(prompt, model, processor, model_id, max_new_t
     inputs = processor.apply_chat_template(messages, add_generation_prompt=True,  tokenize=False)
 
     if model_id == 'gemma-3':
-        inputs = processor.tokenizer(text=inputs, return_tensors="pt").to('cuda')
+        inputs = processor.tokenizer(text=inputs, return_tensors="pt").to(device)
     else:
-        inputs = processor(inputs, return_tensors="pt").to('cuda')
+        inputs = processor(inputs, return_tensors="pt").to(device)
     input_len = inputs["input_ids"].shape[-1]
     
     if 'intervenable' in str(type(model)).lower():

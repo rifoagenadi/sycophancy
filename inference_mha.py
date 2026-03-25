@@ -64,6 +64,7 @@ def main():
     parser.add_argument('--concept', type=str, default='sycophancy', choices=['sycophancy', 'truthful', 'sycophancy_hypothesis', 'sycophancy_challenged'], help='Direction type/concept for probe vectors {sycophancy or truthfulness}')
     parser.add_argument('--use_random_direction', action='store_true', help='If set, use a random direction instead of a fixed probe vector')
     parser.add_argument('--probe_type', type=str, default='linear', choices=['linear', 'nonlinear'], help='Type of probe to use {linear or nonlinear}')
+    parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use for computation')
 
     args = parser.parse_args()
     
@@ -73,7 +74,7 @@ def main():
     concept = args.concept
     
     print(f"Loading model: {model_id}")
-    model, processor = load_model(model_id)
+    model, processor = load_model(model_id, device=args.device)
     model.eval()
     
     accuracies = pickle.load(open(f'probe/trained_probe_{concept}/{model_id}/{args.probe_type}_accuracies_dict_mha.pkl', 'rb'))
@@ -107,7 +108,7 @@ def main():
         target_components = [{
                 "component": f"language_model.layers[{i}].self_attn.o_proj.input",
                 "intervention": pv.AdditionIntervention(
-                    source_representation=linear_probes[i].to("cuda")
+                    source_representation=linear_probes[i].to(args.device)
                 )
                 # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
@@ -115,7 +116,7 @@ def main():
         target_components = [{
                 "component": f"model.layers[{i}].self_attn.o_proj.input",
                 "intervention": pv.AdditionIntervention(
-                    source_representation=linear_probes[i].to("cuda")
+                    source_representation=linear_probes[i].to(args.device)
                 )
                 # "intervention": pv.ZeroIntervention
             } for i in range(NUM_LAYERS) if torch.count_nonzero(linear_probes[i])]
@@ -131,7 +132,7 @@ def main():
     initial_answer = []
     final_answer = []
     for question in tqdm(questions_test):
-        res_1, res_2 = generate_and_decode_new_tokens(question, pv_model, processor, model_id)
+        res_1, res_2 = generate_and_decode_new_tokens(question, pv_model, processor, model_id, device=args.device)
         initial_answer.append(res_1)
         final_answer.append(res_2)
     
